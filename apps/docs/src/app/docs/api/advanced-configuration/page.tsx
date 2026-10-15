@@ -32,7 +32,7 @@ export default function APIAdvancedConfigurationPage() {
         <code>createConsenti(config)</code> accepts a single configuration object. Every field is
         optional — calling it with an empty object is valid and gives you a running server
         immediately. New here? Start with the{' '}
-        <a href="/docs/api/configuration/">Configuration quick start</a> instead — this page is the
+        <a href="/docs/api/configuration">Configuration quick start</a> instead — this page is the
         complete reference, every field with its default value.
       </p>
 
@@ -48,7 +48,9 @@ const consenti = createConsenti({
   // Optional but recommended
   storage: {
     driver: 'json',            // not recommended for production
-    path: './consenti-data',   // directory path — Consenti creates db/, profiles/, logs/ inside
+    path: './consenti-data',   // always required, even for MySQL/Mongo/Postgres — profiles are stored here
+    // uri: process.env.CONSENTI_DB_URI,   // postgresql | mysql | mongodb connection string
+    // poolMax: 5,                         // postgresql | mysql | mongodb — max connections per process (default 5)
   },
   auth: {
     mode: 'local',
@@ -69,14 +71,28 @@ const consenti = createConsenti({
   compliance: {
     type: 'auto',                 // 'auto' = geo-resolve per visitor | ComplianceGroupId = fixed group
     geoDataProvider: 'default',   // 'default' | 'hosted-geoip-lite' | 'geoip' | 'maxmind' | CountryResolverFn
+    complianceMap: 'default',     // 'default' (embedded map) | URL | { version, override?, countries }
+    gpc: true,                    // server-side GPC enforcement on consent writes; false = off
 
     tcf: {
       enabled: false,
       cmpId: 0,
       cmpVersion: 1,
+      publisherCC: 'DE',          // ISO 3166-1 alpha-2 — needed for spec-correct TC strings
+    },
+
+    gpp: {
+      enabled: false,
+      cmpId: 0,
+      cmpVersion: 1,
+      mspaCoveredTransaction: false,   // required, no default
+      mspaOptOutOptionMode: 0,         // 0 = not applicable | 1 = yes | 2 = no
+      mspaServiceProviderMode: 0,
     },
 
     dataSigningHash: process.env.CONSENTI_DATA_SIGNING_HASH,  // signs consent records, ownership cookies, parental-consent tokens; salts hashed IPs. Auto-generated if omitted.
+
+    parentalConsentTokenTtlDays: 7,   // expiry of parental-consent tokens (default 7)
 
     dataRetention: {
       purgeAfterDays: 365,       // delete consent records older than this
@@ -94,8 +110,9 @@ const consenti = createConsenti({
   },
 
   // CDN / cache invalidation hook (optional)
-  handleCache: (paths, version, isPurge) => {
+  handleCache: (paths, profileId, isPurge) => {
     // paths: locale file paths written or removed
+    // profileId: id of the profile that triggered the write
     // isPurge: true = files removed (deactivate/delete); false = files written (create/activate)
   },
 
@@ -123,7 +140,7 @@ const consenti = createConsenti({
         engine; the remaining fields depend on which driver you choose.
       </p>
 
-      <h3>storage.path is a directory</h3>
+      <h3>storage.path is a directory — and always required</h3>
       <p>
         <code>storage.path</code> is a <strong>directory path</strong>, not a file path. Consenti
         creates the following layout inside it automatically:
@@ -144,6 +161,17 @@ const consenti = createConsenti({
         2/                 ← version 2 on next edit
       \${complianceGroup}/ → symlink to the active profile's version dir (hot-serve path)`}
       />
+      <Callout type="warning">
+        <strong>
+          <code>storage.path</code> is required for every driver — including PostgreSQL, MySQL and
+          MongoDB.
+        </strong>{' '}
+        The database holds consent records, users and templates, but profiles are always written to
+        disk under <code>{`\${storage.path}/profiles/`}</code> so the public routes can serve them
+        with no database access. With a server driver <code>db/</code> stays empty, but{' '}
+        <code>profiles/</code> is still used: keep the directory on persistent, writable storage,
+        and if you run more than one instance, point them all at the same shared volume.
+      </Callout>
       <Callout type="info">
         Backward compat: if <code>storage.path</code> has a file extension (<code>.json</code>,{' '}
         <code>.db</code>), the parent directory is used and a deprecation warning is logged.
@@ -236,14 +264,18 @@ npm install node-sqlite3-wasm`}
         lang="ts"
         filename="SQLite config examples"
         code={`// Node 22.5+ — built-in, no install needed
-storage: { driver: 'node:sqlite', path: './consenti.db' }
+storage: { driver: 'node:sqlite', path: './consenti-data' }
 
 // Node 20+ with native addon
-storage: { driver: 'better-sqlite3', path: './consenti.db' }
+storage: { driver: 'better-sqlite3', path: './consenti-data' }
 
 // Node 20+ WASM fallback
-storage: { driver: 'node-sqlite3-wasm', path: './consenti.db' }`}
+storage: { driver: 'node-sqlite3-wasm', path: './consenti-data' }`}
       />
+      <p>
+        <code>path</code> is a directory: the database file ends up at{' '}
+        <code>./consenti-data/db/consenti.db</code>.
+      </p>
 
       <h3>Server drivers</h3>
       <table>
@@ -263,7 +295,7 @@ storage: { driver: 'node-sqlite3-wasm', path: './consenti.db' }`}
               <code>uri</code>
             </td>
             <td>
-              PostgreSQL 13+. Connection pool via <code>pool</code>.
+              PostgreSQL 13+. Pool size via <code>poolMax</code>.
             </td>
           </tr>
           <tr>
@@ -274,7 +306,7 @@ storage: { driver: 'node-sqlite3-wasm', path: './consenti.db' }`}
               <code>uri</code>
             </td>
             <td>
-              MySQL 8+ / MariaDB 10.6+. Connection pool via <code>pool</code>.
+              MySQL 8+ / MariaDB 10.6+. Pool size via <code>poolMax</code>.
             </td>
           </tr>
           <tr>
@@ -302,14 +334,70 @@ npm install mongodb    # MongoDB`}
         lang="ts"
         filename="Server driver config examples"
         code={`// PostgreSQL
-storage: { driver: 'postgresql', uri: process.env.CONSENTI_DATABASE_URL }
+storage: { driver: 'postgresql', path: './consenti-data', uri: process.env.CONSENTI_DB_URI }
 
 // MySQL
-storage: { driver: 'mysql', uri: process.env.CONSENTI_DATABASE_URL }
+storage: { driver: 'mysql', path: './consenti-data', uri: process.env.CONSENTI_DB_URI }
 
 // MongoDB
-storage: { driver: 'mongodb', uri: process.env.CONSENTI_DATABASE_URL, database: 'consenti' }`}
+storage: { driver: 'mongodb', path: './consenti-data', uri: process.env.CONSENTI_DB_URI, database: 'consenti' }`}
       />
+      <Callout type="info">
+        <code>path</code> is in every example above on purpose — see{' '}
+        <a href="#storage">storage.path is a directory</a>.
+      </Callout>
+
+      <h3>Environment variables per driver</h3>
+      <p>
+        Every storage field can be set from the environment (code config wins over env vars).{' '}
+        <code>CONSENTI_DB_PATH</code> is always set, whichever driver you use:
+      </p>
+      <CodeBlock
+        lang="bash"
+        filename=".env — SQLite"
+        code={`CONSENTI_DB_DRIVER=node:sqlite
+CONSENTI_DB_PATH=./consenti-data`}
+      />
+      <CodeBlock
+        lang="bash"
+        filename=".env — PostgreSQL"
+        code={`CONSENTI_DB_DRIVER=postgresql
+CONSENTI_DB_PATH=./consenti-data      # still required: profiles are stored here
+CONSENTI_DB_URI=postgresql://consenti:your-password@localhost:5432/consenti
+
+# …or individual fields instead of CONSENTI_DB_URI:
+# CONSENTI_DB_HOST=localhost
+# CONSENTI_DB_PORT=5432
+# CONSENTI_DB_USER=consenti
+# CONSENTI_DB_PASSWORD=your-password
+# CONSENTI_DB_DATABASE=consenti`}
+      />
+      <CodeBlock
+        lang="bash"
+        filename=".env — MySQL / MariaDB"
+        code={`CONSENTI_DB_DRIVER=mysql
+CONSENTI_DB_PATH=./consenti-data      # still required: profiles are stored here
+CONSENTI_DB_HOST=localhost
+CONSENTI_DB_PORT=3306
+CONSENTI_DB_USER=consenti
+CONSENTI_DB_PASSWORD=your-password
+CONSENTI_DB_DATABASE=consenti
+
+# …or one connection string instead of the five lines above:
+# CONSENTI_DB_URI=mysql://consenti:your-password@localhost:3306/consenti`}
+      />
+      <CodeBlock
+        lang="bash"
+        filename=".env — MongoDB"
+        code={`CONSENTI_DB_DRIVER=mongodb
+CONSENTI_DB_PATH=./consenti-data      # still required: profiles are stored here
+CONSENTI_DB_URI=mongodb://consenti:your-password@localhost:27017/?authSource=admin
+CONSENTI_DB_DATABASE=consenti         # default: consenti`}
+      />
+      <p>
+        When <code>CONSENTI_DB_URI</code> is set, the MySQL/PostgreSQL host, port, user, password and
+        database fields are ignored.
+      </p>
 
       <h3>storage field reference</h3>
       <table>
@@ -348,10 +436,12 @@ storage: { driver: 'mongodb', uri: process.env.CONSENTI_DATABASE_URL, database: 
               <code>'./consenti-data'</code>
             </td>
             <td>
-              <strong>Directory path</strong> for local drivers (<code>json</code>, SQLite).
-              Consenti creates <code>db/</code>, <code>profiles/</code>, and <code>logs/</code>{' '}
-              subdirectories inside. Relative paths resolve from <code>process.cwd()</code>. Must
-              not be inside the package installation directory.
+              <strong>Directory path — required for every driver</strong>, including PostgreSQL,
+              MySQL and MongoDB (profiles are always stored here). Consenti creates{' '}
+              <code>db/</code>, <code>profiles/</code>, and <code>logs/</code> subdirectories
+              inside; <code>db/</code> holds the database file for <code>json</code> and SQLite only.
+              Relative paths resolve from <code>process.cwd()</code>. Must not be inside the package
+              installation directory.
             </td>
           </tr>
           <tr>
@@ -362,7 +452,11 @@ storage: { driver: 'mongodb', uri: process.env.CONSENTI_DATABASE_URL, database: 
               <code>string</code>
             </td>
             <td>—</td>
-            <td>Server drivers only. Full connection string including credentials.</td>
+            <td>
+              Server drivers only (env: <code>CONSENTI_DB_URI</code>). Full connection string
+              including credentials; takes precedence over <code>host</code>/<code>port</code>/
+              <code>user</code>/<code>password</code>.
+            </td>
           </tr>
           <tr>
             <td>
@@ -412,8 +506,179 @@ storage: { driver: 'mongodb', uri: process.env.CONSENTI_DATABASE_URL, database: 
               Database name for PostgreSQL / MySQL when not in <code>uri</code>.
             </td>
           </tr>
+          <tr>
+            <td>
+              <code>poolMax</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>
+              <code>5</code>
+            </td>
+            <td>
+              PostgreSQL, MySQL and MongoDB. Maximum connections this process opens. The default is
+              deliberately low: shared hosts often cap connections per database user (5–25) across
+              every app on the account. Raise it on a dedicated server; each app instance has its own
+              pool.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>statementTimeoutMs</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>—</td>
+            <td>
+              PostgreSQL / MySQL. Abort a query after this many milliseconds. Unset by default — a
+              forced default could break a legitimate long-running export.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>idleInTransactionTimeoutMs</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>—</td>
+            <td>
+              PostgreSQL only. Terminate a connection left idle inside an open transaction after
+              this many milliseconds.
+            </td>
+          </tr>
         </tbody>
       </table>
+
+      <h3 id="table-names">Table and collection names</h3>
+      <p>
+        With <strong>PostgreSQL, MySQL/MariaDB and MongoDB</strong> every table (collection) is named
+        with a fixed <code>consenti_</code> prefix — <code>consenti_tenants</code>,{' '}
+        <code>consenti_profiles</code>, <code>consenti_consent_records</code>,{' '}
+        <code>consenti_users</code>, <code>consenti_schema_version</code>, … (17 in all) — so Consenti
+        can never collide with, or silently adopt, a table of the same name belonging to another app
+        in the same database. The prefix is not configurable. SQLite and the JSON store keep plain
+        names: their data lives in a file Consenti owns.
+      </p>
+      <Callout type="warning">
+        If the database still holds the old <strong>unprefixed</strong> tables from a version before
+        0.6.0 and no prefixed ones, Consenti refuses to start and tells you to run the migration
+        script, rather than creating an empty set next to your data. See{' '}
+        <a href="#upgrading-0-6-0">Upgrading from before 0.6.0</a>.
+      </Callout>
+
+      <h3 id="shared-hosting">Shared hosting and restricted database users</h3>
+      <p>
+        Consenti works against a database you can&apos;t administer — the cPanel / Plesk /
+        managed-database case, where the database and its user are created in a control panel and
+        the user can only touch that one database. It never runs <code>CREATE DATABASE</code>,{' '}
+        <code>USE</code>, <code>CREATE EXTENSION</code>, <code>GRANT</code>, triggers or stored
+        procedures: it connects to the database named in your config, creates its{' '}
+        <code>consenti_*</code> tables on first start and upgrades them in place later.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Driver</th>
+            <th>What the database user needs</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>MySQL / MariaDB</td>
+            <td>
+              <code>SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES</code> on that
+              database (<code>ALL PRIVILEGES</code>, the shared-host default, covers it)
+            </td>
+          </tr>
+          <tr>
+            <td>PostgreSQL</td>
+            <td>
+              <code>CREATE</code> on the schema it connects to (normally <code>public</code> — the
+              database owner has it) plus <code>SELECT, INSERT, UPDATE, DELETE</code>
+            </td>
+          </tr>
+          <tr>
+            <td>MongoDB</td>
+            <td>
+              the <code>readWrite</code> role on that database
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>
+          <strong>Use a dedicated database.</strong> The prefix keeps Consenti&apos;s tables from
+          clashing with other apps&apos; tables, but one database per app is still the clean setup.
+        </li>
+        <li>
+          <strong>
+            Set <code>storage.path</code> anyway
+          </strong>{' '}
+          — profiles are files. It must be a writable directory that survives restarts.
+        </li>
+        <li>
+          <strong>Connections.</strong> The pool defaults to 5 per process. If you see{' '}
+          <em>too many connections</em>, lower <code>storage.poolMax</code>; on a dedicated server,
+          raise it.
+        </li>
+        <li>
+          <strong>Names are used as given.</strong> cPanel prefixes names (<code>cpuser_consenti</code>
+          , <code>cpuser_app</code>) — use the full string. In a connection string, URL-encode
+          special characters in the password (<code>@</code> → <code>%40</code>, <code>/</code> →{' '}
+          <code>%2F</code>, <code>#</code> → <code>%23</code>), or use the separate{' '}
+          <code>host</code> / <code>user</code> / <code>password</code> / <code>database</code>{' '}
+          fields.
+        </li>
+        <li>
+          <strong>Versions.</strong> MySQL 8+ / MariaDB 10.6+ (the dashboard statistics use{' '}
+          <code>JSON_TABLE</code>), PostgreSQL 13+, MongoDB 6+.
+        </li>
+        <li>
+          <strong>Several instances</strong> may start at once on an empty database: the first start
+          is serialised with a named lock (MySQL/MariaDB) or advisory lock (PostgreSQL), neither of
+          which needs a special privilege.
+        </li>
+        <li>
+          <strong>A first start that dies halfway</strong> is safe: PostgreSQL rolls back;
+          MySQL/MariaDB cannot roll back DDL, so every statement is re-runnable and the version table
+          is written last — fix the cause and start again. A missing privilege is named in the error.
+        </li>
+      </ul>
+
+      <h3 id="upgrading-0-6-0">Upgrading from before 0.6.0</h3>
+      <p>
+        <strong>PostgreSQL, MySQL/MariaDB and MongoDB only</strong> (SQLite and JSON: nothing to do).
+        0.6.0 renamed the tables to <code>consenti_*</code>. Rename your existing ones once, before
+        starting the new version:
+      </p>
+      <CodeBlock
+        lang="bash"
+        filename="One-off rename"
+        code={`# 1. Back up the database and stop the app.
+# 2. Dry run — prints what would be renamed, changes nothing.
+#    Uses the same CONSENTI_DB_* variables as the app
+#    (or --driver, --uri, --host/--port/--user/--password, --database).
+node node_modules/@consenti/api/scripts/migrate-to-consenti-prefix.mjs
+
+# 3. Rename.
+node node_modules/@consenti/api/scripts/migrate-to-consenti-prefix.mjs --apply
+
+# 4. Start the app — it finishes any remaining schema upgrade itself.`}
+      />
+      <p>
+        The script only renames: no rows are read, copied or deleted, so it takes moments whatever
+        the database size, and it is safe to re-run. MySQL/MariaDB renames every table in one atomic
+        statement, PostgreSQL in one transaction, MongoDB collection by collection (each keeps its
+        data and indexes). It refuses to overwrite a <code>consenti_*</code> table that already
+        exists. It needs more than the app does: <code>ALTER</code> + <code>DROP</code> on the old
+        tables and <code>CREATE</code> + <code>INSERT</code> on the new ones (MySQL;{' '}
+        <code>ALL PRIVILEGES</code> covers it), table ownership (PostgreSQL) or the{' '}
+        <code>renameCollection</code> action (MongoDB; <code>readWrite</code> includes it). Anything
+        else that reads these tables directly — reports, BI tools — must switch to the new names.
+      </p>
 
       {/* ── auth ─────────────────────────────────────────────────────────── */}
       <h2>auth</h2>
@@ -1155,7 +1420,11 @@ rateLimit: { enabled: false }`}
               <code>&apos;geoip&apos;</code> — local lookup via optional <code>geoip-lite</code>{' '}
               peer dep. <code>&apos;maxmind&apos;</code> — official MaxMind SDK, most accurate,
               requires <code>.mmdb</code> file. Pass a <code>CountryResolverFn</code> to use any
-              custom source — must return{' '}
+              custom source. It receives{' '}
+              <code>{'{ ip, timezone, language, languages, locale }'}</code> — the same hints the
+              widget sends to <code>/resolve-profile</code> (<code>language</code> is the
+              browser&apos;s primary tag, <code>languages</code> its full preference list,{' '}
+              <code>locale</code> the locale the widget requested) — and must return{' '}
               <code>
                 {'{ country: string | null, region: string | null, locale: string | null }'}
               </code>
@@ -1165,14 +1434,130 @@ rateLimit: { enabled: false }`}
               route into an operator-defined custom group).
             </td>
           </tr>
+          <tr>
+            <td>
+              <code>complianceMap</code>
+            </td>
+            <td>
+              <code>
+                &apos;default&apos; | string | ComplianceMapData
+              </code>
+            </td>
+            <td>
+              <code>&apos;default&apos;</code>
+            </td>
+            <td>
+              The country → compliance-group map used by <code>type: &apos;auto&apos;</code>.{' '}
+              <code>&apos;default&apos;</code> is the embedded map; a URL string is fetched and
+              refreshed in the background; an object is used as given. By default a supplied map{' '}
+              <em>replaces</em> the embedded one; <code>override: false</code> inside it merges your
+              countries over the embedded map instead. Invalid data logs an error and falls back to{' '}
+              <code>&apos;default&apos;</code>. Details and examples below.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>gpc</code>
+            </td>
+            <td>
+              <code>boolean | &apos;strict&apos;</code>
+            </td>
+            <td>
+              enabled
+            </td>
+            <td>
+              Server-side Global Privacy Control enforcement on <code>POST</code>/<code>PUT</code>{' '}
+              <code>/consent</code>. When a write arrives with <code>gpcDetected: true</code>, the
+              server denies, regardless of what the client sent: under CPRA, cookies tagged{' '}
+              <code>cpraCategory: &apos;sale&apos;</code> or <code>&apos;sharing&apos;</code>; under
+              every other regulation, cookies with <code>listenGpc: true</code>. Skipped for DPDPA,
+              which recognises no GPC opt-out signal. <code>false</code> turns the check off
+              entirely (the widget&apos;s own client-side handling is unaffected); <code>true</code>,{' '}
+              <code>&apos;strict&apos;</code> or omitted leave it on —{' '}
+              <code>&apos;strict&apos;</code> is accepted but currently behaves like{' '}
+              <code>true</code>. Whether the visitor-facing banner honours GPC is the per-profile{' '}
+              <code>gpcMode</code>, a separate setting.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>tcf</code>
+            </td>
+            <td>
+              <code>TcfConfig</code>
+            </td>
+            <td>— (omit to disable)</td>
+            <td>
+              IAB TCF integration: <code>enabled</code>, <code>cmpId</code>, <code>cmpVersion</code>,{' '}
+              <code>publisherCC</code>. See <a href="#tcf">tcf</a>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>gpp</code>
+            </td>
+            <td>
+              <code>GppConfig</code>
+            </td>
+            <td>— (omit to disable)</td>
+            <td>
+              IAB GPP (US National section): <code>enabled</code>, <code>cmpId</code>,{' '}
+              <code>cmpVersion</code>, <code>mspaCoveredTransaction</code>,{' '}
+              <code>mspaOptOutOptionMode</code>, <code>mspaServiceProviderMode</code>. See{' '}
+              <a href="#gpp">gpp</a>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>dataSigningHash</code>
+            </td>
+            <td>
+              <code>string</code>
+            </td>
+            <td>auto-generated in memory</td>
+            <td>
+              Secret that signs consent records, ownership cookies and parental-consent tokens and
+              salts hashed IPs. Set it for production. See{' '}
+              <a href="#dataSigningHash">compliance.dataSigningHash</a>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>parentalConsentTokenTtlDays</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>
+              <code>7</code>
+            </td>
+            <td>
+              How long a parental-consent request/resolve token stays valid, in days. See{' '}
+              <a href="#dataSigningHash">compliance.dataSigningHash</a>.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>dataRetention</code>
+            </td>
+            <td>
+              <code>{'{ purgeAfterDays: number }'}</code>
+            </td>
+            <td>— (omit to keep records)</td>
+            <td>
+              Nightly hard-delete of consent records older than <code>purgeAfterDays</code>. Audit
+              logs are never purged. See <a href="#dataRetention">dataRetention</a>.
+            </td>
+          </tr>
         </tbody>
       </table>
 
       <Callout type="info">
-        GPC handling (<code>ignore</code> / <code>honor</code> / <code>strict</code>) is a
-        per-profile setting configured in the dashboard profile wizard (<code>gpcMode</code>) — not
-        a global compliance config option. The compliance group provides a default GPC behaviour;
-        the profile can override it.
+        Two different GPC settings exist, at two levels. <code>compliance.gpc</code> (above) is a
+        server-wide safety net applied to every consent write. <code>gpcMode</code>{' '}
+        (<code>ignore</code> / <code>honor</code> / <code>strict</code>) is per profile, set in the
+        dashboard profile wizard, and controls what the banner does when it detects GPC; the
+        compliance group provides its default.
       </Callout>
 
       <CodeBlock
@@ -1204,7 +1589,8 @@ compliance: {
 // Custom geo resolver — integrate your own GeoIP SaaS
 compliance: {
   type: 'auto',
-  geoDataProvider: async ({ ip, timezone, language }) => {
+  // ctx: { ip, timezone, language, languages, locale } — languages/locale come from the widget
+  geoDataProvider: async ({ ip, timezone, language, languages, locale }) => {
     const res = await fetch(\`https://api.mygeoip.com/\${ip}\`)
     const data = await res.json()
     return { country: data.country_code, region: data.region, locale: data.locale ?? null }
@@ -1216,7 +1602,10 @@ compliance: {
   type: 'auto',
   complianceMap: 'default', // 'default' (embedded map) | a URL string | an inline object
   // complianceMap: 'https://your-host.com/compliance-map.json',
-  // complianceMap: { version: '2026-01', countries: { US: { complianceGroup: 'opt-out' } } },
+  // Replaces the embedded map (default) — only the listed countries resolve:
+  // complianceMap: { version: '2026-01', countries: { DE: { complianceGroup: 'opt-in' } } },
+  // Merge over the embedded map — only DE changes, every other country keeps its built-in group:
+  // complianceMap: { version: '2026-01', override: false, countries: { DE: { complianceGroup: 'opt-out' } } },
 }
 
 // Custom geo resolver that already knows the compliance group — skips the
@@ -1243,11 +1632,17 @@ compliance: {
         (the embedded map, unchanged), a URL string (fetched and used as the map — refreshed in
         the background per the response's <code>Cache-Control</code>/<code>Expires</code> header,
         24h fallback if absent), or an inline object matching{' '}
-        <code>ComplianceMapData</code> (<code>{'{ version, countries: { [code]: { complianceGroup, default?, description?, overriddenRegions? } } }'}</code>
+        <code>ComplianceMapData</code> (<code>{'{ version, override?, countries: { [code]: { complianceGroup, default?, description?, overriddenRegions? } } }'}</code>
         {' '}— <code>default</code> falls back to <code>complianceGroup</code> when omitted).
-        Invalid data from either a URL or an object logs an error and falls back to{' '}
+        By default the supplied map <strong>replaces</strong> the embedded one, so only the
+        countries you list resolve (<code>override: true</code>, the default). Set{' '}
+        <code>override: false</code> in the document to <strong>merge</strong> your{' '}
+        <code>countries</code> over the embedded map instead: a listed country replaces its
+        embedded entry wholesale (including its <code>overriddenRegions</code> — nothing is
+        deep-merged), and every unlisted country keeps its built-in group. <code>GB</code> and{' '}
+        <code>UK</code> are treated as the same country. Invalid data from either a URL or an object logs an error and falls back to{' '}
         <code>'default'</code> — this never crashes the server. See the{' '}
-        <a href="/docs/compliance/jurisdiction-coverage-map/">Jurisdiction Coverage Map</a> for the
+        <a href="/docs/compliance/jurisdiction-coverage-map">Jurisdiction Coverage Map</a> for the
         full embedded country list, and <code>customComplianceGroup</code> (documented on that
         page) for routing a profile outside the 8 built-in groups.
       </Callout>
@@ -1419,12 +1814,15 @@ compliance: {
           </tr>
           <tr>
             <td>
-              <code>version</code>
+              <code>profileId</code>
             </td>
             <td>
-              <code>number</code>
+              <code>string</code>
             </td>
-            <td>Current profile version at the time of the operation.</td>
+            <td>
+              Id of the profile that triggered the operation. It stays the same across edits of
+              that profile.
+            </td>
           </tr>
           <tr>
             <td>
@@ -1443,7 +1841,7 @@ compliance: {
       <CodeBlock
         lang="ts"
         filename="handleCache example"
-        code={`handleCache: (paths, version, isPurge) => {
+        code={`handleCache: (paths, profileId, isPurge) => {
   if (isPurge) {
     // Purge these paths from your CDN / nginx proxy cache
     for (const p of paths) {
@@ -1492,7 +1890,7 @@ compliance: {
 
 const cloudfront = new CloudFrontClient({ region: 'us-east-1' })
 
-handleCache: async (paths, _version, isPurge) => {
+handleCache: async (paths, _profileId, isPurge) => {
   // Only the pointer.json paths need active invalidation — versioned locale
   // files are immutable and can just expire out of cache on their own TTL.
   const pointerPaths = paths.filter(p => p.endsWith('pointer.json'))
@@ -1524,13 +1922,13 @@ handleCache: async (paths, _version, isPurge) => {
         <code>/resolve-profile</code> (geo-resolution) and <code>/consent</code> (record writes) —
         always hit the Consenti origin server directly; they cannot be served from S3 or cached at
         the edge. Point the widget&apos;s <code>api.baseUrl</code> at your origin, not the CDN
-        domain — see <a href="/docs/ui/advanced-configuration/#api">the UI <code>api</code> config</a>.
+        domain — see <a href="/docs/ui/advanced-configuration#api">the UI <code>api</code> config</a>.
       </Callout>
 
       {/* ── tcf ──────────────────────────────────────────────────────────── */}
-      <h2>tcf</h2>
+      <h2 id="tcf">tcf</h2>
       <p>
-        IAB Transparency & Consent Framework v2.2 integration. When enabled, Consenti fetches the
+        IAB Transparency & Consent Framework v2.3 integration. When enabled, Consenti fetches the
         Global Vendor List and stores TC strings on consent records. <code>cmpId</code>/
         <code>cmpVersion</code> here must match the widget's own <code>compliance.tcf</code> config
         — the client-side <code>window.__tcfapi</code> stub lives in <code>@consenti/ui</code>, not
@@ -1583,6 +1981,24 @@ handleCache: async (paths, _version, isPurge) => {
               in TC strings.
             </td>
           </tr>
+          <tr>
+            <td>
+              <code>publisherCC</code>
+            </td>
+            <td>
+              <code>string</code>
+            </td>
+            <td>— (no default)</td>
+            <td>
+              ISO 3166-1 alpha-2 country code of the publisher (<code>&apos;DE&apos;</code>,{' '}
+              <code>&apos;FR&apos;</code>). Needed for spec-correct binary TC-string encoding
+              (with the optional <code>@iabtechlabtcf/core</code> peer dependency): without it
+              Consenti falls back to a simplified, non-spec TC string. There is no default because
+              there is no honest country to assume on a publisher&apos;s behalf. Part of what the
+              dashboard&apos;s registration confirmation hashes, so changing it asks you to
+              re-confirm.
+            </td>
+          </tr>
         </tbody>
       </table>
       <CodeBlock
@@ -1591,15 +2007,150 @@ handleCache: async (paths, _version, isPurge) => {
         code={`compliance: {
   tcf: {
     enabled: true,
-    cmpId: 42,        // your IAB CMP ID
+    cmpId: 42,          // your IAB CMP ID
     cmpVersion: 1,
+    publisherCC: 'DE',  // your country — needed for spec-correct TC strings
   },
 }`}
       />
+      <Callout type="info">
+        Until a dashboard admin confirms the <code>cmpId</code>/<code>cmpVersion</code> registration
+        (Dashboard → Vendors), TCF is treated as disabled: no TC string is produced and the widget
+        installs no <code>window.__tcfapi</code>. See the{' '}
+        <a href="/docs/compliance/tcf-and-gpp-registration">TCF &amp; GPP Registration Guide</a>.
+      </Callout>
       <Callout type="warning">
         TCF mode requires an IAB-registered CMP ID. Do not use a placeholder CMP ID in production —
         the GVL and downstream DSPs validate it.
       </Callout>
+
+      {/* ── gpp ──────────────────────────────────────────────────────────── */}
+      <h2 id="gpp">gpp</h2>
+      <p>
+        IAB Global Privacy Platform integration, <strong>US National (<code>usnat</code>) section
+        only</strong> — the umbrella section most MSPA / programmatic US bidders read. State sections
+        (US-CA, US-CO, …) are not encoded separately. When enabled, Consenti stores a{' '}
+        <code>gppString</code> on consent records, and the widget exposes <code>window.__gpp</code>.{' '}
+        <code>cmpId</code>/<code>cmpVersion</code> here must match the widget&apos;s own{' '}
+        <code>compliance.gpp</code> config.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Type</th>
+            <th>Default</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <code>enabled</code>
+            </td>
+            <td>
+              <code>boolean</code>
+            </td>
+            <td>
+              <code>false</code> (omit <code>gpp</code> to disable)
+            </td>
+            <td>Turn GPP string generation on.</td>
+          </tr>
+          <tr>
+            <td>
+              <code>cmpId</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>— (required)</td>
+            <td>
+              Your CMP ID for GPP. Unlike TCF there is no public IAB list to check it against, so
+              confirming it in the dashboard is a self-attestation.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>cmpVersion</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>— (required)</td>
+            <td>Your CMP software version number.</td>
+          </tr>
+          <tr>
+            <td>
+              <code>mspaCoveredTransaction</code>
+            </td>
+            <td>
+              <code>boolean</code>
+            </td>
+            <td>— (required)</td>
+            <td>
+              MSPA &quot;covered transaction&quot;: whether this deployment&apos;s data transactions
+              fall under Multi-State Privacy Agreement signatory obligations. Required, with no
+              default, because there is no honest value to assume — answer it with your legal
+              counsel.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>mspaOptOutOptionMode</code>
+            </td>
+            <td>
+              <code>0 | 1 | 2</code>
+            </td>
+            <td>— (required)</td>
+            <td>
+              MSPA opt-out-option mode, IAB&apos;s tri-state: <code>0</code> not applicable,{' '}
+              <code>1</code> yes, <code>2</code> no.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>mspaServiceProviderMode</code>
+            </td>
+            <td>
+              <code>0 | 1 | 2</code>
+            </td>
+            <td>— (required)</td>
+            <td>
+              MSPA service-provider mode, same tri-state: <code>0</code> not applicable,{' '}
+              <code>1</code> yes, <code>2</code> no.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <CodeBlock
+        lang="ts"
+        filename="gpp example"
+        code={`compliance: {
+  gpp: {
+    enabled: true,
+    cmpId: 9999,
+    cmpVersion: 1,
+    mspaCoveredTransaction: true,
+    mspaOptOutOptionMode: 1,     // 0 = not applicable | 1 = yes | 2 = no
+    mspaServiceProviderMode: 2,
+  },
+}`}
+      />
+      <ul>
+        <li>
+          A GPP string is only produced for a consent write when the profile contains cookies
+          tagged <code>cpraCategory: &apos;sale&apos;</code> or <code>&apos;sharing&apos;</code>;
+          otherwise there is nothing to encode.
+        </li>
+        <li>
+          Install the optional <code>@iabgpp/cmpapi</code> peer dependency for spec-correct binary
+          encoding. Without it Consenti uses a simplified, non-spec string.
+        </li>
+        <li>
+          Like TCF, GPP stays disabled until a dashboard admin confirms the registration. See the{' '}
+          <a href="/docs/compliance/tcf-and-gpp-registration">TCF &amp; GPP Registration Guide</a>.
+        </li>
+      </ul>
 
       {/* ── ageGate ──────────────────────────────────────────────────────── */}
       <h2>Age gate (per-profile, not a createConsenti() option)</h2>
@@ -1674,7 +2225,7 @@ handleCache: async (paths, _version, isPurge) => {
       </p>
 
       {/* ── dataRetention ────────────────────────────────────────────────── */}
-      <h2>dataRetention</h2>
+      <h2 id="dataRetention">dataRetention</h2>
       <p>
         Automatic GDPR data minimisation. When configured, Consenti runs a nightly background job
         that hard-deletes consent records older than <code>purgeAfterDays</code>.
@@ -2072,7 +2623,7 @@ branding: {
       </Callout>
 
       {/* ── dataSigningHash ────────────────────────────────────────────── */}
-      <h2>compliance.dataSigningHash</h2>
+      <h2 id="dataSigningHash">compliance.dataSigningHash</h2>
       <p>
         One secret, four jobs — all server-side, HMAC-SHA256 via <code>node:crypto</code>{' '}
         <code>createHmac</code>: signs every consent record at create/update time (hex-encoded
@@ -2112,6 +2663,23 @@ branding: {
               <code>undefined</code>
             </td>
             <td>Signing/salting key. Auto-generated in memory (changes on restart) if omitted.</td>
+          </tr>
+          <tr>
+            <td>
+              <code>parentalConsentTokenTtlDays</code>
+            </td>
+            <td>
+              <code>number</code>
+            </td>
+            <td>
+              <code>7</code>
+            </td>
+            <td>
+              Days a parental-consent request/resolve token (from{' '}
+              <code>POST /consent/:visitorId/parental-consent-request</code>) stays valid. The
+              tokens are signed with <code>dataSigningHash</code>, so with the auto-generated key a
+              restart invalidates them regardless of this value.
+            </td>
           </tr>
         </tbody>
       </table>

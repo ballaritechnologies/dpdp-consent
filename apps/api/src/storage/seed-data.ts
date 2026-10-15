@@ -84,7 +84,10 @@ const consentRecords: TableDef = {
     { n: 'id',                     t: 'pk' },
     { n: 'tenant_id',              t: 'text', ref: 'tenants' },
     { n: 'visitor_id',             t: 'text' },
-    { n: 'profile_id',             t: 'text', ref: 'profiles' },
+    // No FK to profiles: a consent record is evidence and must outlive its profile row — a
+    // deleted profile's versions stay on disk (see ProfileService.getArchivedSnapshot).
+    { n: 'profile_id',             t: 'text' },
+    { n: 'profile_version',        t: 'int', null: true }, // null = recorded before versions were tracked
     { n: 'locale',                 t: 'text_sm' },
     { n: 'consent_json',           t: 'json' },
     { n: 'gpc_detected',           t: 'bool', def: false },
@@ -116,6 +119,7 @@ const consentHistory: TableDef = {
     { n: 'tenant_id',         t: 'text', ref: 'tenants' },
     { n: 'consent_record_id', t: 'text', ref: 'consent_records' },
     { n: 'visitor_id',        t: 'text' },
+    { n: 'profile_version',   t: 'int', null: true },
     { n: 'old_json',          t: 'json', null: true },
     { n: 'new_json',          t: 'json' },
     { n: 'action',            t: 'text_sm' },
@@ -151,7 +155,7 @@ const noticeShown: TableDef = {
     { n: 'id',         t: 'pk' },
     { n: 'tenant_id',  t: 'text', ref: 'tenants' },
     { n: 'visitor_id', t: 'text' },
-    { n: 'profile_id', t: 'text', ref: 'profiles' },
+    { n: 'profile_id', t: 'text' }, // no FK to profiles, same reason as consent_records.profile_id
     { n: 'locale',     t: 'text_sm' },
     { n: 'created_at', t: 'ts', def: '$now' },
   ],
@@ -303,10 +307,49 @@ const uiTemplates: TableDef = {
 }
 
 // ── Exported table definition groups ─────────────────────────────────────────
-// No installations predate this schema, so every adapter creates the full current table set
-// in one pass on first connect — no incremental/versioned migration steps. `migrate()` in each
-// SQL adapter keeps a `schema_version`/`PRAGMA user_version` check so *future* real migrations
-// have somewhere to hook in; there's just nothing to gate behind a version yet.
+// A fresh install creates the full current table set in one pass and is stamped SCHEMA_VERSION.
+// Each SQL adapter's `migrate()` gates upgrades of older databases on `schema_version` /
+// `PRAGMA user_version`:
+//   v1 → v2  drop the profile_id foreign keys on consent_records / notice_shown (a consent record
+//            is evidence and must outlive its profile) and add profile_version to
+//            consent_records / consent_history.
+// MongoDB and the JSON file adapter are schemaless — the new field is simply optional there.
+export const SCHEMA_VERSION = 2
+
+/**
+ * Prefix on every table (PostgreSQL / MySQL) and collection (MongoDB), so Consenti never collides
+ * with — or silently adopts — a generic `users` / `roles` / `profiles` table that already exists
+ * in the database. Not applied to SQLite or the JSON file store: those keep their data in a file
+ * Consenti owns. Fixed, not configurable: the adapters' queries and the one-off migration script
+ * (apps/api/scripts/migrate-to-consenti-prefix.mjs) both rely on the literal value.
+ */
+export const TABLE_PREFIX = 'consenti_'
+
+/** `profiles` → `consenti_profiles`. */
+export function prefixed(name: string): string {
+  return TABLE_PREFIX + name
+}
+
+/** Names a pre-0.6.0 install has, unprefixed, that no unrelated app is likely to have all of. */
+export const LEGACY_PROBE_NAMES = ['schema_version', 'tenants', 'profiles', 'consent_records'] as const
+
+/**
+ * Thrown when a database/collection set from before the `consenti_` prefix is found and no
+ * prefixed one exists. Starting anyway would silently create an empty set beside the old data —
+ * it would look like every profile and consent record had vanished — so the adapter refuses to
+ * start until the one-off rename script has been run.
+ */
+export function legacyInstallError(kind: 'tables' | 'collections'): Error {
+  return new Error(
+    `[consenti] This database has Consenti ${kind} from an earlier version, named without the ` +
+    `"${TABLE_PREFIX}" prefix (tenants, profiles, consent_records, …). Consenti now only reads and ` +
+    `writes "${TABLE_PREFIX}*" ${kind}, so starting would create an empty set next to your data. ` +
+    `Back up the database, then rename them once with: ` +
+    `node node_modules/@consenti/api/scripts/migrate-to-consenti-prefix.mjs --apply ` +
+    `(it reads the same CONSENTI_DB_* environment variables; run it without --apply first to see the plan). ` +
+    `Details: CHANGELOG 0.6.0.`,
+  )
+}
 
 /** All tables, SQLite dialect — `usersSqlite` includes `allowed_tenants`. */
 export const ALL_TABLES_SQLITE: readonly TableDef[] = [
@@ -352,13 +395,14 @@ function buildTableSQLite(t: TableDef): string {
   return `CREATE TABLE IF NOT EXISTS ${t.name} (\n${lines.join(',\n')}\n);`
 }
 
-function idxName(t: TableDef, cols: string[]): string {
-  return `idx_${t.name}_${cols.join('_')}`
+/** Index name for a table's *final* (already prefixed, where applicable) name. */
+function idxName(tableName: string, cols: string[]): string {
+  return `idx_${tableName}_${cols.join('_')}`
 }
 
 function buildIndexesSQLite(t: TableDef): string {
   return (t.idx ?? [])
-    .map(i => `CREATE INDEX IF NOT EXISTS ${idxName(t, i.cols)} ON ${t.name} (${i.cols.join(', ')});`)
+    .map(i => `CREATE INDEX IF NOT EXISTS ${idxName(t.name, i.cols)} ON ${t.name} (${i.cols.join(', ')});`)
     .join('\n')
 }
 
@@ -379,7 +423,7 @@ function buildColPg(c: ColDef): string {
   if (!c.null) parts.push('NOT NULL')
   if (c.def !== undefined) parts.push(pgDef(c.def))
   if (c.unique) parts.push('UNIQUE')
-  if (c.ref) { parts.push(`REFERENCES ${c.ref}(id)`); if (c.onDel) parts.push(`ON DELETE ${c.onDel}`) }
+  if (c.ref) { parts.push(`REFERENCES ${prefixed(c.ref)}(id)`); if (c.onDel) parts.push(`ON DELETE ${c.onDel}`) }
   return parts.join(' ')
 }
 
@@ -387,14 +431,14 @@ function buildTablePg(t: TableDef): string {
   const lines = t.cols.map(c => `  ${buildColPg(c)}`)
   if (t.pk) lines.push(`  PRIMARY KEY (${t.pk.join(', ')})`)
   if (t.uq) for (const u of t.uq) lines.push(`  UNIQUE (${u.cols.join(', ')})`)
-  return `CREATE TABLE IF NOT EXISTS ${t.name} (\n${lines.join(',\n')}\n);`
+  return `CREATE TABLE IF NOT EXISTS ${prefixed(t.name)} (\n${lines.join(',\n')}\n);`
 }
 
 function buildIndexesPg(t: TableDef): string {
   // Only runs once, inside the same version-gated fresh-install transaction as the CREATE TABLE
   // statements above (see PostgreSQLAdapter#migrate), so IF NOT EXISTS is defensive, not required.
   return (t.idx ?? [])
-    .map(i => `CREATE INDEX IF NOT EXISTS ${idxName(t, i.cols)} ON ${t.name} (${i.cols.join(', ')});`)
+    .map(i => `CREATE INDEX IF NOT EXISTS ${idxName(prefixed(t.name), i.cols)} ON ${prefixed(t.name)} (${i.cols.join(', ')});`)
     .join('\n')
 }
 
@@ -425,7 +469,7 @@ function buildColMySQL(c: ColDef): string {
   if (c.def !== undefined) parts.push(mysqlDef(c.def))
   if (c.mysqlUpd) parts.push('ON UPDATE CURRENT_TIMESTAMP')
   if (c.unique) parts.push('UNIQUE')
-  if (c.ref) { parts.push(`REFERENCES ${c.ref}(id)`); if (c.onDel) parts.push(`ON DELETE ${c.onDel}`) }
+  if (c.ref) { parts.push(`REFERENCES ${prefixed(c.ref)}(id)`); if (c.onDel) parts.push(`ON DELETE ${c.onDel}`) }
   return parts.join(' ')
 }
 
@@ -433,15 +477,13 @@ function buildTableMySQL(t: TableDef): string {
   const lines = t.cols.map(c => `  ${buildColMySQL(c)}`)
   if (t.pk) lines.push(`  PRIMARY KEY (${t.pk.join(', ')})`)
   if (t.uq) for (const u of t.uq) lines.push(`  UNIQUE KEY uq_${u.cols.join('_')} (${u.cols.join(', ')})`)
-  return `CREATE TABLE IF NOT EXISTS ${t.name} (\n${lines.join(',\n')}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
-}
-
-function buildIndexesMySQL(t: TableDef): string {
-  // MySQL's CREATE INDEX has no IF NOT EXISTS — safe regardless, since this only runs once,
-  // inside the same version-gated fresh-install pass as the CREATE TABLE statements above.
-  return (t.idx ?? [])
-    .map(i => `CREATE INDEX ${idxName(t, i.cols)} ON ${t.name} (${i.cols.join(', ')});`)
-    .join('\n')
+  // Secondary indexes are declared inline rather than as separate `CREATE INDEX` statements: MySQL
+  // DDL auto-commits and `CREATE INDEX` has no IF NOT EXISTS, so a first start that died partway
+  // (dropped connection, host limit) used to leave tables behind and then fail forever on
+  // "Duplicate key name". Each `CREATE TABLE IF NOT EXISTS` is now a single, re-runnable statement.
+  const name = prefixed(t.name)
+  for (const i of t.idx ?? []) lines.push(`  INDEX ${idxName(name, i.cols)} (${i.cols.join(', ')})`)
+  return `CREATE TABLE IF NOT EXISTS ${name} (\n${lines.join(',\n')}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`
 }
 
 function toSQLite(tables: readonly TableDef[]): string {
@@ -453,8 +495,34 @@ function toPostgres(tables: readonly TableDef[]): string {
   return idx ? `${tables.map(buildTablePg).join('\n')}\n${idx}` : tables.map(buildTablePg).join('\n')
 }
 function toMySQL(tables: readonly TableDef[]): string {
-  const idx = tables.map(buildIndexesMySQL).filter(Boolean).join('\n')
-  return idx ? `${tables.map(buildTableMySQL).join('\n')}\n${idx}` : tables.map(buildTableMySQL).join('\n')
+  return tables.map(buildTableMySQL).join('\n')
+}
+
+// ── v1 → v2 upgrade (SQLite) ──────────────────────────────────────────────────
+// SQLite can't drop a foreign key in place, so the two tables are rebuilt from the current
+// TableDefs — the standard 12-step procedure, driven by `migrate-v2.ts`, which checks the old
+// table's real columns and the copied row counts before anything is dropped.
+
+/** Tables whose foreign key on profile_id is removed in v2 (rebuilt on SQLite). */
+export const V2_REBUILT_TABLES = ['consent_records', 'notice_shown'] as const
+
+/** Column names the current schema defines for `table`. */
+export function currentColumns(table: string): string[] {
+  const def = ALL_TABLES_SQLITE.find(t => t.name === table)
+  if (!def) throw new Error(`Unknown table ${table}`)
+  return def.cols.map(c => c.n)
+}
+
+/** SQL for rebuilding `table` from its current definition, copying only `copyCols`. */
+export function sqliteRebuildStatements(table: string, copyCols: string[]): { create: string; copy: string; swap: string } {
+  const def = ALL_TABLES_SQLITE.find(t => t.name === table)
+  if (!def) throw new Error(`Unknown table ${table}`)
+  const cols = copyCols.join(', ')
+  return {
+    create: buildTableSQLite({ ...def, name: `${table}_v2` }),
+    copy: `INSERT INTO ${table}_v2 (${cols}) SELECT ${cols} FROM ${table};`,
+    swap: [`DROP TABLE ${table};`, `ALTER TABLE ${table}_v2 RENAME TO ${table};`, buildIndexesSQLite(def)].filter(Boolean).join('\n'),
+  }
 }
 
 // ── Index list for document stores ────────────────────────────────────────────
@@ -486,12 +554,12 @@ export const SCHEMA_SQL_SQLITE = toSQLite(ALL_TABLES_SQLITE)
 /** PostgreSQL full schema — all tables with current column set. */
 export const SCHEMA_SQL_POSTGRES =
   toPostgres(ALL_TABLES_FULL) +
-  '\nCREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);\n'
+  `\nCREATE TABLE IF NOT EXISTS ${prefixed('schema_version')} (version INTEGER PRIMARY KEY);\n`
 
 /** MySQL full schema — all tables with current column set. */
 export const SCHEMA_SQL_MYSQL =
   toMySQL(ALL_TABLES_FULL) +
-  '\nCREATE TABLE IF NOT EXISTS schema_version (\n  version INT NOT NULL PRIMARY KEY\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n'
+  `\nCREATE TABLE IF NOT EXISTS ${prefixed('schema_version')} (\n  version INT NOT NULL PRIMARY KEY\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n`
 
 // ── Core data ─────────────────────────────────────────────────────────────────
 

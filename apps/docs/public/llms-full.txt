@@ -537,26 +537,148 @@ export const DELETE = GET
 | `node:sqlite` | built-in (Node 22.5+) | Zero-install SQLite, recommended |
 | `node-sqlite3-wasm` | `node-sqlite3-wasm` | WASM SQLite, Node 20+ |
 | `better-sqlite3` | `better-sqlite3` | Native SQLite |
-| `postgresql` | `pg` | Production recommended |
-| `mysql` | `mysql2` | Production recommended |
-| `mongodb` | `mongodb` | Production recommended |
+| `postgresql` | `pg` | Production recommended (PostgreSQL 13+) |
+| `mysql` | `mysql2` | Production recommended (MySQL 8+ / MariaDB 10.6+) |
+| `mongodb` | `mongodb` | Production recommended (MongoDB 6+) |
+
+**`storage.path` is required for every driver — PostgreSQL, MySQL and MongoDB too.** It is a directory (not a file). The database holds consent records, users and templates, but compiled profiles are always stored as files under `${storage.path}/profiles/`, so the public routes can serve them with no database access. With a server driver `db/` stays empty, but `profiles/` is still used: keep the directory on persistent, writable storage, shared between instances if you run more than one.
 
 ```ts
 // PostgreSQL
 createConsenti({
-  storage: { driver: 'postgresql', connectionString: process.env.DATABASE_URL! },
+  storage: {
+    driver: 'postgresql',
+    path: './consenti-data',      // still required: profiles are stored here
+    uri: process.env.CONSENTI_DB_URI!, // postgresql://user:pass@host:5432/consenti
+  },
+})
+
+// MySQL / MariaDB — connection string, or host/port/user/password/database
+createConsenti({
+  storage: {
+    driver: 'mysql',
+    path: './consenti-data',      // still required: profiles are stored here
+    host: 'localhost',
+    port: 3306,
+    user: process.env.CONSENTI_DB_USER!,
+    password: process.env.CONSENTI_DB_PASSWORD!,
+    database: 'consenti',
+    poolMax: 5,                   // default 5 — see "Shared hosting" below
+  },
 })
 
 // MongoDB
 createConsenti({
-  storage: { driver: 'mongodb', uri: process.env.MONGODB_URI!, database: 'consenti' },
-})
-
-// MySQL
-createConsenti({
-  storage: { driver: 'mysql', host: 'localhost', database: 'consenti', user: 'root', password: process.env.MYSQL_PASSWORD! },
+  storage: {
+    driver: 'mongodb',
+    path: './consenti-data',      // still required: profiles are stored here
+    uri: process.env.CONSENTI_DB_URI!, // mongodb://user:pass@host:27017/?authSource=admin
+    database: 'consenti',
+  },
 })
 ```
+
+Other storage fields: `poolMax` (PostgreSQL/MySQL/MongoDB, default 5), `statementTimeoutMs` (PostgreSQL/MySQL, unset by default), `idleInTransactionTimeoutMs` (PostgreSQL only, unset by default). When `uri` is set, `host`, `port`, `user`, `password` are ignored.
+
+### Environment variables per driver
+
+Every storage field can be set from the environment (code config wins). `CONSENTI_DB_PATH` is set with every driver.
+
+```bash
+# SQLite
+CONSENTI_DB_DRIVER=node:sqlite
+CONSENTI_DB_PATH=./consenti-data
+
+# PostgreSQL — connection string …
+CONSENTI_DB_DRIVER=postgresql
+CONSENTI_DB_PATH=./consenti-data
+CONSENTI_DB_URI=postgresql://consenti:your-password@localhost:5432/consenti
+# … or CONSENTI_DB_HOST / CONSENTI_DB_PORT / CONSENTI_DB_USER / CONSENTI_DB_PASSWORD / CONSENTI_DB_DATABASE
+
+# MySQL / MariaDB
+CONSENTI_DB_DRIVER=mysql
+CONSENTI_DB_PATH=./consenti-data
+CONSENTI_DB_HOST=localhost
+CONSENTI_DB_PORT=3306
+CONSENTI_DB_USER=consenti
+CONSENTI_DB_PASSWORD=your-password
+CONSENTI_DB_DATABASE=consenti
+# or one connection string: CONSENTI_DB_URI=mysql://consenti:your-password@localhost:3306/consenti
+
+# MongoDB
+CONSENTI_DB_DRIVER=mongodb
+CONSENTI_DB_PATH=./consenti-data
+CONSENTI_DB_URI=mongodb://consenti:your-password@localhost:27017/?authSource=admin
+CONSENTI_DB_DATABASE=consenti
+```
+
+### Table and collection names
+
+With PostgreSQL, MySQL/MariaDB and MongoDB every table (collection) is named with a fixed `consenti_` prefix — `consenti_tenants`, `consenti_profiles`, `consenti_consent_records`, `consenti_users`, `consenti_schema_version`, … (17 in all) — so Consenti can never collide with, or silently adopt, another app's `users` or `profiles` table in the same database. The prefix is not configurable. SQLite and the JSON store keep plain names (their data lives in a file Consenti owns).
+
+### Shared hosting and restricted database users
+
+Consenti works with a single fixed database and a user that can only touch it (cPanel, Plesk, managed databases). It never runs `CREATE DATABASE`, `USE`, `CREATE EXTENSION`, `GRANT`, triggers or stored procedures; it creates its `consenti_*` tables on first start and upgrades them in place later.
+
+- MySQL / MariaDB user needs: `SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES` on that database (`ALL PRIVILEGES` covers it).
+- PostgreSQL user needs: `CREATE` on the schema it connects to (normally `public`; the database owner has it) plus `SELECT, INSERT, UPDATE, DELETE`.
+- MongoDB user needs: the `readWrite` role on that database.
+- Use a dedicated database; set `storage.path` anyway (profiles are files).
+- The connection pool defaults to 5 per process because shared hosts often cap connections per database user (5–25) across all apps. Set `storage.poolMax` to change it; each app instance has its own pool.
+- Use the full names your panel gives (`cpuser_consenti`, `cpuser_app`). In a connection string URL-encode special characters in the password (`@` → `%40`, `/` → `%2F`, `#` → `%23`), or use the separate host/user/password/database fields.
+- MySQL 8+ / MariaDB 10.6+ is needed for the dashboard statistics (`JSON_TABLE`); PostgreSQL 13+; MongoDB 6+.
+- Several instances may start at once on an empty database (a named lock on MySQL/MariaDB, an advisory lock on PostgreSQL, idempotent seeding on MongoDB). A first start that dies halfway is safe to repeat: PostgreSQL rolls back; MySQL/MariaDB statements are all re-runnable and the version table is written last. A missing privilege is named in the error.
+
+### Upgrading from before 0.6.0 (PostgreSQL, MySQL/MariaDB, MongoDB only)
+
+0.6.0 renamed the tables to `consenti_*`. If the database still holds the old unprefixed Consenti tables, the adapter refuses to start and says so (nothing is changed or lost). SQLite and the JSON store are unaffected. Rename once, before starting the new version:
+
+```bash
+# 1. Back up the database and stop the app.
+# 2. Dry run — prints what would be renamed (same CONSENTI_DB_* variables as the app).
+node node_modules/@consenti/api/scripts/migrate-to-consenti-prefix.mjs
+# 3. Rename.
+node node_modules/@consenti/api/scripts/migrate-to-consenti-prefix.mjs --apply
+# 4. Start the app — it finishes any remaining schema upgrade itself.
+```
+
+The script only renames: no rows are read, copied or deleted; it is safe to re-run and refuses to overwrite an existing `consenti_*` table. It needs `ALTER` + `DROP` on the old tables and `CREATE` + `INSERT` on the new ones (MySQL; `ALL PRIVILEGES` covers it), table ownership (PostgreSQL), or the `renameCollection` action (MongoDB; `readWrite` includes it).
+
+---
+
+## Backend API — Server Configuration Reference
+
+Every option of `createConsenti({...})`. All are optional except where a nested key says required. Code config wins over environment variables.
+
+| Option | Type / default | Notes |
+|---|---|---|
+| `basePath` | `string`, `'/consenti'` | URL prefix for every route (`CONSENTI_BASE_PATH`) |
+| `dashboard` | `boolean \| { enabled?, path? }`, `true` | Serve the admin SPA at `basePath`, or at a custom sub-path |
+| `storage` | `StorageConfig`, `json` driver | See Storage Drivers. `path` is always required; `poolMax` default 5 |
+| `auth` | `AuthConfig`, `mode: 'local'` | `mode` `'local' \| 'jwt' \| 'oidc' \| 'saml' \| 'custom'`; `masterSecret`, `adminEmail`, `adminPassword`, `oidc`, `saml`, `validateUser` |
+| `rateLimit` | `{ enabled?, windowMs?, maxRequests? }`, 60 requests per 60 000 ms per IP | `enabled: false` turns it off |
+| `maxBodySize` | `number`, `1048576` | Request body limit in bytes |
+| `trustedProxies` | `string[]`, `[]` | IPs / CIDRs of reverse proxies, whose `X-Forwarded-For` is trusted |
+| `multiTenant` | `{ enabled: boolean }`, off | Scopes all data per tenant (`X-Tenant-ID`) |
+| `branding` | `{ appName?, appLogoPath?, hidePoweredBy? }` | Dashboard name, logo (file path or URL), hide the "Powered by Consenti" badge |
+| `s3Api` | `{ enabled, region, bucketName, accessKeyId, secretAccessKey, sessionToken? }` | Also writes profile locale JSON to S3 |
+| `handleCache` | `(paths: string[], profileId: string, isPurge: boolean) => void` | Called after profile create/update/activate/deactivate/delete: `paths` are the files written or removed, `profileId` the profile that triggered it, `isPurge` true when files were removed |
+| `plugins` | `ConsentiServerPlugin[]`, `[]` | Lifecycle hooks |
+| `compliance` | `ComplianceConfig` | Below |
+
+`compliance`:
+
+| Key | Type / default | Notes |
+|---|---|---|
+| `type` | `'auto' \| ComplianceGroupId`, `'auto'` | `'auto'` geo-resolves per visitor; a group id applies one group to everyone |
+| `geoDataProvider` | `'default' \| 'hosted-geoip-lite' \| 'geoip' \| 'maxmind' \| CountryResolverFn`, `'default'` | A custom function gets `{ ip, timezone, language, languages, locale }` and returns `{ country, region, locale, complianceGroup? }` |
+| `complianceMap` | `'default' \| url \| ComplianceMapData`, `'default'` | Country-to-group map. A supplied map replaces the embedded one; `override: false` inside it merges over it |
+| `gpc` | `boolean \| 'strict'`, on | Server-side GPC enforcement on consent writes (denies CPRA sale/sharing cookies, or cookies with `listenGpc` under other regulations; skipped for DPDPA). `false` = off. `'strict'` currently behaves like `true`. Banner behaviour is the per-profile `gpcMode` |
+| `tcf` | `{ enabled, cmpId, cmpVersion, publisherCC? }` | `publisherCC` (ISO 3166-1 alpha-2) is needed for spec-correct TC strings. Stays disabled until a dashboard admin confirms the registration |
+| `gpp` | `{ enabled, cmpId, cmpVersion, mspaCoveredTransaction, mspaOptOutOptionMode, mspaServiceProviderMode }` | US National section only. `mspaCoveredTransaction` is a boolean, the two modes are `0` not applicable / `1` yes / `2` no; all required, no defaults. Needs the optional `@iabgpp/cmpapi` for spec-correct encoding |
+| `dataSigningHash` | `string`, auto-generated in memory | Signs consent records, ownership cookies, parental-consent tokens; salts hashed IPs. Set it for production (`CONSENTI_DATA_SIGNING_HASH`) |
+| `parentalConsentTokenTtlDays` | `number`, `7` | Validity of parental-consent request/resolve tokens |
+| `dataRetention` | `{ purgeAfterDays }`, keep forever | Nightly hard-delete of consent records older than N days. Audit logs are never purged |
 
 ---
 
@@ -609,6 +731,7 @@ auth: {
 | Method | Path | Description |
 |---|---|---|
 | GET | `/consenti/api/v1/profile` | Get active profile for a domain |
+| GET | `/consenti/api/v1/resolve-profile` | Geo-resolve the visitor's compliance group (`compliance.type: 'auto'`); returns `{ path, complianceGroup, locale, found }` |
 | POST | `/consenti/api/v1/consent` | Record a consent decision |
 | GET | `/consenti/api/v1/consent/:visitorId` | Get consent record for visitor |
 | DELETE | `/consenti/api/v1/consent/:visitorId` | GDPR right-to-erasure |
@@ -625,6 +748,33 @@ auth: {
 | GET | `/consenti/api/v1/admin/consents` | List consent records (paginated) |
 | GET | `/consenti/api/v1/admin/audit-logs` | List audit log entries |
 | GET | `/consenti/api/v1/admin/stats` | Dashboard statistics |
+
+---
+
+## Backend API — Auto geo-routing (compliance.type: 'auto')
+
+With `compliance.type: 'auto'` the widget calls `GET /consenti/api/v1/resolve-profile?data=<base64 JSON>` with the browser's hints (`timezone`, `language`, `languages`, `locale`). The server resolves a country, maps it to a compliance group through the jurisdiction map, and answers `{ path, complianceGroup, locale, found }`; the widget then fetches that profile file directly. `found: false` means no active profile exists for the resolved group, or no group could be resolved — the widget shows its default banner.
+
+```ts
+createConsenti({
+  compliance: {
+    type: 'auto',
+    geoDataProvider: 'default',   // 'default' | 'hosted-geoip-lite' | 'geoip' | 'maxmind' | custom function
+    complianceMap: 'default',     // 'default' | URL string | inline ComplianceMapData object
+  },
+})
+```
+
+- **Custom `geoDataProvider`** — `async ({ ip, timezone, language, languages, locale }) => ({ country, region, locale, complianceGroup? })`. `language` is the browser's primary tag, `languages` its full preference list, `locale` the locale the widget requested. A returned `complianceGroup` is used directly and skips the country → group map.
+- **`complianceMap`** — by default a supplied map **replaces** the built-in one (only the countries you list resolve). Set `override: false` in the map document to **merge** your countries over the built-in map instead: a listed country replaces its built-in entry wholesale (`default`, `overriddenRegions` included), every other country keeps its built-in group.
+
+  ```ts
+  complianceMap: { version: '2026-10', override: false, countries: { DE: { complianceGroup: 'opt-out' } } }
+  ```
+- **United Kingdom** — geo providers, timezone data and `en-GB` language tags use ISO `GB`; `GB` and `UK` are treated as the same country in both the built-in map and operator maps.
+- The widget (standalone mode) takes the same `complianceMap` document and its own `compliance.geoDataProvider`, which receives `{ timezone, language, languages, locale }`. There, a country the map doesn't list falls back to the built-in mapping by default (widget maps have always merged); `override: true` makes it get the strictest group (`opt-in`) instead. Note the default differs from the server, where an omitted `override` replaces the built-in map.
+
+Docs: https://consenti.dev/guides/backend/geo-routing/ · https://consenti.dev/docs/api/advanced-configuration/ · https://consenti.dev/docs/api/routes/public/
 
 ---
 

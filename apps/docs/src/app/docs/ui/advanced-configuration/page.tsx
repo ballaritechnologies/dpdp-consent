@@ -32,7 +32,7 @@ export default function UIAdvancedConfigurationPage() {
         <code>new ConsentiSetup(config)</code> accepts a single <code>ConsentiConfig</code> object.
         All top-level keys are optional — the widget works with an empty config object,
         auto-detecting the compliance group from the browser. New here? Start with the{' '}
-        <a href="/docs/ui/configuration/">Configuration quick start</a> instead — this page is the
+        <a href="/docs/ui/configuration">Configuration quick start</a> instead — this page is the
         complete reference, every field with its default value.
       </p>
 
@@ -55,6 +55,9 @@ const widget = new ConsentiSetup({
       enabled: false,            // must match the backend's tcf config
       cmpId: 0,
       cmpVersion: 1,
+      publisherCC: 'DE',         // optional — ISO 3166-1 alpha-2; vendors see 'AA' if unset
+      // vendorListVersion: 0,   // optional — GVL version you track (0 = unknown)
+      // gvlVersion: 0,          // optional — GVL specification version you track (0 = unknown)
     },
     gpp: {                       // IAB GPP (US National section); must match the backend's gpp config
       enabled: false,
@@ -207,7 +210,9 @@ const widget = new ConsentiSetup({
               <code>undefined</code>
             </td>
             <td>
-              Custom async function returning{' '}
+              Custom async function. It receives the browser hints{' '}
+              <code>{'{ timezone, language, languages, locale }'}</code> (the same ones the widget
+              sends to the API) and returns{' '}
               <code>
                 {'{ country: string | null, region: string | null, confidence: number }'}
               </code>
@@ -238,7 +243,12 @@ const widget = new ConsentiSetup({
               <code>&apos;default&apos;</code> keeps the embedded map; a URL string is fetched and
               used as the map (the browser&apos;s own HTTP cache honors whatever{' '}
               <code>Cache-Control</code>/<code>ETag</code> the response sends); an inline object
-              overrides specific countries directly. Invalid data from either source logs a warning
+              overrides specific countries directly. A country the map does not list falls back to
+              the embedded mapping; set <code>override: true</code> in the document to opt out of
+              that, so an unlisted country gets the strictest group (<code>&apos;opt-in&apos;</code>)
+              instead. Unlike the server, an omitted <code>override</code> is not{' '}
+              <code>true</code> here — widget maps have always merged over the embedded mapping,
+              and that stays the default. Invalid data from either source logs a warning
               and falls back to <code>&apos;default&apos;</code>. Does not affect country/region
               detection itself — only the final group lookup.
             </td>
@@ -255,9 +265,15 @@ const widget = new ConsentiSetup({
             </td>
             <td>
               IAB TCF v2.3 client stub configuration —{' '}
-              <code>{'{ enabled, cmpId, cmpVersion }'}</code>, must match the backend&apos;s{' '}
-              <code>tcf</code> config. When enabled, installs
-              <code>window.__tcfapi</code>. See the &quot;TCF v2.3 Implementation Guide&quot;.
+              <code>{'{ enabled, cmpId, cmpVersion, publisherCC?, vendorListVersion?, gvlVersion? }'}</code>
+              ; <code>enabled</code>, <code>cmpId</code> and <code>cmpVersion</code> must match the
+              backend&apos;s <code>tcf</code> config. When enabled, installs{' '}
+              <code>window.__tcfapi</code>. <code>publisherCC</code> is your ISO 3166-1 alpha-2
+              country code: leave it unset and ad-tech vendors reading it see{' '}
+              <code>&apos;AA&apos;</code>, an explicit &quot;not configured&quot; placeholder.{' '}
+              <code>vendorListVersion</code> and <code>gvlVersion</code> are the Global Vendor List
+              and specification versions, if you track them; both default to <code>0</code>{' '}
+              (&quot;unknown&quot;). See the &quot;TCF v2.3 Implementation Guide&quot;.
             </td>
           </tr>
           <tr>
@@ -392,7 +408,7 @@ const widget = new ConsentiSetup({
       <Callout type="info">
         This is the summary. For the full list of every country/region mapped to a group, the
         regulations behind each one, and how <code>customComplianceGroup</code> profiles work, see
-        the <a href="/docs/compliance/jurisdiction-coverage-map/">Jurisdiction Coverage Map</a>.
+        the <a href="/docs/compliance/jurisdiction-coverage-map">Jurisdiction Coverage Map</a>.
       </Callout>
 
       <CodeBlock
@@ -402,7 +418,7 @@ const widget = new ConsentiSetup({
 
 // geoDataProvider only runs for compliance.type: 'auto' — a fixed type (e.g. 'opt-in')
 // never calls it, since there's no group to detect.
-const geoResolver: WidgetCountryResolverFn = async () => {
+const geoResolver: WidgetCountryResolverFn = async ({ timezone, language, languages, locale }) => {
   const res = await fetch('/api/geo')
   const data = await res.json()
   return { country: data.country, region: data.region ?? null, confidence: data.confidence ?? 1 }
@@ -801,7 +817,7 @@ buildSyncGpcSnippet({ dataLayerName: 'myDataLayer' }) // custom dataLayer name`}
         Inline CSS token overrides. Each key maps directly to a <code>--consenti-*</code> CSS custom
         property injected on the widget root element at runtime. You only need to set the values you
         want to change — unset keys keep their stylesheet default. For full CSS control, see the{' '}
-        <a href="/docs/ui/themes/">Themes &amp; CSS guide</a>.
+        <a href="/docs/ui/themes">Themes &amp; CSS guide</a>.
       </p>
       <table>
         <thead>
@@ -1244,7 +1260,7 @@ buildSyncGpcSnippet({ dataLayerName: 'myDataLayer' }) // custom dataLayer name`}
               visitor, <code>/consent</code> writes records) and can&apos;t be served from a CDN or
               cached at the edge. A CDN (CloudFront, etc.) can still front the resolved profile
               JSON itself when the backend&apos;s <code>s3Api</code> is enabled — see{' '}
-              <a href="/docs/api/advanced-configuration/#s3Api">
+              <a href="/docs/api/advanced-configuration#s3Api">
                 s3Api and the CloudFront worked example
               </a>{' '}
               — but that&apos;s a separate path from this <code>baseUrl</code>.
@@ -1344,7 +1360,7 @@ buildSyncGpcSnippet({ dataLayerName: 'myDataLayer' }) // custom dataLayer name`}
         When <code>api.enabled</code> is <code>true</code> and the network request fails (offline,
         server error), the widget silently falls back to the pre-built profile for the detected
         compliance group, then to the built-in default. Consent submission retries are not automatic
-        — use the <a href="/docs/ui/events/">events</a> API to implement your own retry logic.
+        — use the <a href="/docs/ui/events">events</a> API to implement your own retry logic.
       </Callout>
 
       <hr />
@@ -1506,7 +1522,7 @@ new ConsentiSetup({
 })`}
       />
       <p>
-        See the <a href="/docs/ui/plugins/">Plugins guide</a> for the full plugin API and available
+        See the <a href="/docs/ui/plugins">Plugins guide</a> for the full plugin API and available
         first-party plugins.
       </p>
 
@@ -1521,8 +1537,18 @@ new ConsentiSetup({
       </p>
       <p>
         This is a runtime override only. It does not affect the stored profile. See the{' '}
-        <a href="/docs/ui/advanced-profiles/">Advanced Profile reference</a> for a full reference
+        <a href="/docs/ui/advanced-profiles">Advanced Profile reference</a> for a full reference
         and examples.
+      </p>
+      <p>
+        Its per-compliance-group sibling is <code>complianceGroupsOverride</code>: a map keyed by
+        compliance-group id (one of the 8 built-in groups, or a custom group id) whose entries are
+        deep-merged onto whichever profile the visitor&apos;s resolved group loads, so you can write
+        different copy per country without a separate profile for each. It is applied before{' '}
+        <code>profileOverride</code>, which always applies last, and works the same in standalone
+        and <code>api.enabled</code> mode. See{' '}
+        <a href="/docs/ui/advanced-profiles#compliancegroupsoverride">complianceGroupsOverride</a>{' '}
+        for examples.
       </p>
       <CodeBlock
         lang="ts"
@@ -1578,7 +1604,7 @@ new ConsentiSetup({
         To <em>replace</em> a whole map (say, swap every built-in button for your own), put{' '}
         <code>{"'*': null"}</code> in it: every base key your override doesn&apos;t name is deleted,
         and named keys are kept and merged. See{' '}
-        <a href="/docs/ui/advanced-profiles/#replacing-a-map">Replacing a whole map</a>.
+        <a href="/docs/ui/advanced-profiles#replacing-a-map">Replacing a whole map</a>.
       </p>
 
       <hr />

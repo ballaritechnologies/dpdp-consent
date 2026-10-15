@@ -1,5 +1,6 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { dirname } from 'node:path'
 import { randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
 import type {
   StorageAdapter,
@@ -140,7 +141,7 @@ export class JsonFileAdapter implements StorageAdapter {
   private scheduleWrite(): void {
     this.writeQueue = this.writeQueue
       .then(async () => {
-        await mkdir(this.filePath.replace(/\/[^/]+$/, ''), { recursive: true })
+        await mkdir(dirname(this.filePath), { recursive: true })
         const tmp = `${this.filePath}.tmp`
         await writeFile(tmp, JSON.stringify(this.db), 'utf8')
         await rename(tmp, this.filePath)
@@ -261,6 +262,7 @@ export class JsonFileAdapter implements StorageAdapter {
       tenantId: data.tenantId,
       visitorId: data.visitorId,
       profileId: data.profileId,
+      ...(data.profileVersion != null && { profileVersion: data.profileVersion }),
       locale: data.locale,
       consentJson: data.consentJson as ConsentValue,
       gpcDetected: data.gpcDetected ?? false,
@@ -279,6 +281,7 @@ export class JsonFileAdapter implements StorageAdapter {
       tenantId: data.tenantId,
       consentRecordId: id,
       visitorId: data.visitorId,
+      ...(data.profileVersion != null && { profileVersion: data.profileVersion }),
       oldJson: null,
       newJson: data.consentJson as ConsentValue,
       action: 'created',
@@ -296,6 +299,7 @@ export class JsonFileAdapter implements StorageAdapter {
     const updated: ConsentDbRecord = {
       ...existing,
       consentJson: data.consentJson as ConsentValue,
+      ...(data.profileVersion != null && { profileVersion: data.profileVersion }),
       ...(data.locale != null && { locale: data.locale }),
       ...(data.gpcDetected != null && { gpcDetected: data.gpcDetected }),
       ...(data.signature != null && { signature: data.signature }),
@@ -307,6 +311,7 @@ export class JsonFileAdapter implements StorageAdapter {
       tenantId: existing.tenantId,
       consentRecordId: existing.id,
       visitorId,
+      ...((data.profileVersion ?? existing.profileVersion) != null && { profileVersion: (data.profileVersion ?? existing.profileVersion)! }),
       oldJson: existing.consentJson,
       newJson: data.consentJson as ConsentValue,
       action: 'updated',

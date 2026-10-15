@@ -159,7 +159,9 @@ createConsenti({
             lang: 'typescript',
             code: `import type { CountryResolverFn } from '@consenti/api'
 
-const myResolver: CountryResolverFn = async ({ ip, timezone, language }) => {
+// ctx: ip, timezone, language (browser's primary tag), languages (full preference list),
+// locale (the locale the widget requested) — the same hints the widget sends to /resolve-profile
+const myResolver: CountryResolverFn = async ({ ip, timezone, language, languages, locale }) => {
   const result = await myGeoDatabase.lookup(ip)
   return {
     country: result.countryCode ?? null,  // ISO 3166-1 alpha-2
@@ -182,12 +184,15 @@ createConsenti({
       <p>
         Countries are mapped to compliance groups via an embedded map of 190+ countries and
         territories, maintained by the Consenti project — see the full list on the{' '}
-        <a href="/docs/compliance/jurisdiction-coverage-map/">Jurisdiction Coverage Map</a>.{' '}
+        <a href="/docs/compliance/jurisdiction-coverage-map">Jurisdiction Coverage Map</a>.{' '}
         <code>geoDataProvider</code> decides which country/region gets looked up;{' '}
         <code>compliance.complianceMap</code> decides what group that country resolves to — set it
         to <code>'default'</code> to keep the embedded map, a URL to fetch your own JSON map
         (refreshed in the background per the response's <code>Cache-Control</code>/
         <code>Expires</code> header), or an inline object to override specific countries directly.
+        By default your map replaces the embedded one, so only the countries you list resolve. Add{' '}
+        <code>override: false</code> to the document to merge your countries over the embedded map
+        instead — every country you don't list then keeps its built-in group.
       </p>
 
       <CodeBlock
@@ -213,7 +218,7 @@ createConsenti({
         — pin <code>compliance.type</code> to a fixed group for the whole deployment, or author a
         profile against a <code>customComplianceGroup</code> and target it explicitly. Both are
         covered on the{' '}
-        <a href="/docs/compliance/jurisdiction-coverage-map/#custom-compliance-groups">
+        <a href="/docs/compliance/jurisdiction-coverage-map#custom-compliance-groups">
           Jurisdiction Coverage Map
         </a>
         .
@@ -236,17 +241,17 @@ createConsenti({
       <RelatedDocs
         items={[
           {
-            href: '/docs/api/advanced-configuration/',
+            href: '/docs/api/advanced-configuration',
             label: 'Advanced Configuration',
             desc: 'Full geoDataProvider and trustedProxies option reference',
           },
           {
-            href: '/docs/api/routes/public/',
+            href: '/docs/api/routes/public',
             label: 'Public Routes',
             desc: 'The /resolve-profile endpoint used by the widget',
           },
           {
-            href: '/docs/compliance/jurisdiction-coverage-map/',
+            href: '/docs/compliance/jurisdiction-coverage-map',
             label: 'Jurisdiction Coverage Map',
             desc: 'Every country, its law(s), and its compliance group',
           },

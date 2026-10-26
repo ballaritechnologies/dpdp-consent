@@ -16,6 +16,17 @@ const SHARED_SCHEMAS = {
       updatedAt: { type: 'string', format: 'date-time' },
     },
   },
+  TenantSettings: {
+    type: 'object',
+    properties: {
+      allowedOrigins: { type: 'array', items: { type: 'string' } },
+      adminAllowedOrigins: { type: 'array', items: { type: 'string' } },
+      setupCompleted: { type: 'boolean' },
+      profilesSeeded: { type: 'boolean' },
+      regime: { type: 'string', enum: ['dpdp', 'dpdp_gdpr', 'strictest_global'], description: 'Per-site consent regime applied by geo routing. Absent → plain jurisdiction-map routing.' },
+      regimeDefaultGroup: { type: 'string', description: '`dpdp_gdpr` only: compliance group for visitors outside India and the EU/EEA/UK, and for unknown locations. Absent → `opt-in`.' },
+    },
+  },
   CreateConsentInput: {
     type: 'object',
     required: ['visitorId', 'profileId', 'consentJson'],
@@ -70,6 +81,34 @@ export const OPENAPI_PUBLIC_SPEC = {
         responses: {
           '200': { description: 'Resolved profile for the requested locale' },
           '404': { description: 'Profile not found' },
+        },
+      },
+    },
+    '/v1/resolve-profile': {
+      get: {
+        tags: ['Profile'],
+        summary: 'Resolve the profile for this visitor (geo routing)',
+        description: 'Used by widgets with `compliance.type: \'auto\'`. Resolves the visitor\'s country from the configured `geoDataProvider`, maps it to a compliance group via the jurisdiction map, then applies the site\'s consent regime if one is set (`dpdp` → every visitor gets `opt-in-dpdpa`; `dpdp_gdpr` → India gets `opt-in-dpdpa`, EU/EEA/UK get `opt-in`, everyone else and unknown locations get the configured default group). Returns where to fetch the active profile for that group. Only available when the server runs with `compliance.type: \'auto\'`.',
+        parameters: [
+          { name: 'data', in: 'query', schema: { type: 'string' }, description: 'Base64-encoded JSON geo hints from the widget: `{ timezone, language, languages, locale }`.' },
+          { name: 'tenant', in: 'query', schema: { type: 'string' }, description: 'Site/tenant id. Honoured only when `multiTenant.enabled`; otherwise the default tenant is always used. Must be 1–64 letters, digits, `-` or `_`.' },
+          { name: 'tz', in: 'query', schema: { type: 'string' }, description: 'Legacy: IANA timezone hint.' },
+          { name: 'lang', in: 'query', schema: { type: 'string' }, description: 'Legacy: language hint.' },
+          { name: 'locale', in: 'query', schema: { type: 'string' }, description: 'Legacy: requested locale.' },
+        ],
+        responses: {
+          '200': {
+            description: 'Resolution result. `found: false` with `path: null` means no active profile exists for the resolved group.',
+            content: { 'application/json': { schema: { type: 'object', properties: {
+              path: { type: ['string', 'null'] },
+              complianceGroup: { type: 'string' },
+              locale: { type: 'string' },
+              found: { type: 'boolean' },
+              requiresSensitiveOptIn: { type: 'boolean' },
+            } } } },
+          },
+          '400': { description: 'Invalid tenant id' },
+          '501': { description: 'Geo routing not configured, or the site\'s regime is not implemented yet (`strictest_global`)' },
         },
       },
     },
@@ -432,6 +471,40 @@ export const OPENAPI_ADMIN_SPEC = {
           { name: 'to', in: 'query', schema: { type: 'string', format: 'date' } },
         ],
         responses: { '200': { description: 'CSV or JSON download' } },
+      },
+    },
+    // ── Settings ──────────────────────────────────────────────────────────
+    '/settings': {
+      get: {
+        tags: ['Settings'],
+        summary: 'Get site settings (origin allowlists, consent regime)',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' }, description: 'Site/tenant to read. Must be in the caller\'s allowed tenants.' }],
+        responses: {
+          '200': { description: 'TenantSettings', content: { 'application/json': { schema: { $ref: '#/components/schemas/TenantSettings' } } } },
+          '403': { description: 'Missing `settings:update`, or tenant not allowed' },
+          '404': { description: 'Tenant not found' },
+        },
+      },
+      patch: {
+        tags: ['Settings'],
+        summary: 'Update site settings',
+        description: 'Partial update — only the fields sent change. Send `regime: null` to clear the regime (back to plain jurisdiction-map routing). Every regime change is recorded in the audit log as `settings:regime_updated`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: {
+          allowedOrigins: { type: 'array', items: { type: 'string' } },
+          adminAllowedOrigins: { type: 'array', items: { type: 'string' } },
+          regime: { type: ['string', 'null'], enum: ['dpdp', 'dpdp_gdpr', 'strictest_global', null] },
+          regimeDefaultGroup: { type: ['string', 'null'], enum: ['opt-in', 'opt-out', 'opt-out-strict', 'opt-in-dpdpa', 'opt-in-china', 'opt-in-brazil', 'general-privacy-consent', 'notice-only', null] },
+        } } } } },
+        responses: {
+          '200': { description: 'Updated TenantSettings', content: { 'application/json': { schema: { $ref: '#/components/schemas/TenantSettings' } } } },
+          '400': { description: 'Validation error' },
+          '403': { description: 'Missing `settings:update`, or tenant not allowed' },
+          '404': { description: 'Tenant not found' },
+          '501': { description: '`strictest_global` is not implemented yet' },
+        },
       },
     },
     // ── Tenants ───────────────────────────────────────────────────────────

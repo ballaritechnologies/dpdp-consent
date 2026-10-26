@@ -10,7 +10,7 @@
  * HOW TO ADD A NEW REGULATION OR COMPLIANCE GROUP: see the header comment in
  * packages/utils/src/compliance.ts — these types auto-update from that data.
  */
-import type { COMPLIANCE_REGULATION_IDS, COMPLIANCE_GROUP_IDS } from '@consenti/utils'
+import type { COMPLIANCE_REGULATION_IDS, COMPLIANCE_GROUP_IDS, REGIME_IDS } from '@consenti/utils'
 
 export type Compliance = typeof COMPLIANCE_REGULATION_IDS[number]
 
@@ -23,3 +23,6 @@ export type ComplianceGroupId = typeof COMPLIANCE_GROUP_IDS[number]
  * `customComplianceGroup` instead of one of the 8 built-in groups.
  */
 export type ComplianceType = 'auto' | ComplianceGroupId | (string & {}) | Symbol
+/** Per-site consent regime — a routing policy in front of the jurisdiction map. See
+ * packages/utils/src/regime.ts. */
+export type Regime = typeof REGIME_IDS[number]

@@ -112,6 +112,11 @@ const BACKEND_GUIDES = [
     desc: "How Consenti maps a visitor's IP and timezone to the right compliance group.",
   },
   {
+    href: '/guides/backend/consent-regimes',
+    title: 'Consent Regimes (DPDP / GDPR)',
+    desc: 'Pick per site whether visitors get the DPDP flow, or DPDP for India and GDPR for the EU/EEA/UK.',
+  },
+  {
     href: '/guides/backend/storage',
     title: 'Choosing a Storage Driver',
     desc: 'Compare JSON, SQLite, PostgreSQL, MySQL, and MongoDB — and when to use each.',

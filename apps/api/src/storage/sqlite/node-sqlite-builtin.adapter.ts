@@ -5,6 +5,8 @@ import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomCo
 import { resolveStoragePaths } from '../../utils/storage-path'
 import { SEED_SQL, SCHEMA_SQL_SQLITE, SCHEMA_VERSION } from '../seed-data'
 import { migrateSqliteToV2 } from './migrate-v2'
+import { migrateSqliteToV3 } from './migrate-v3'
+import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import { likePrefix } from '../../utils/sql-search'
 import type {
   StorageAdapter,
@@ -179,13 +181,17 @@ export class NodeSqliteBuiltinAdapter implements StorageAdapter {
     // older database is upgraded in place, gated on `PRAGMA user_version` (see seed-data.ts for
     // what each version changed).
     const row = this.db.prepare('PRAGMA user_version').get() as { user_version: number }
-    if (row.user_version < 1) {
+    let ver = row.user_version
+    if (ver < 1) {
       this.db.exec(SCHEMA_SQL_SQLITE)
       this.db.exec(SEED_SQL)
       this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
-    } else if (row.user_version < 2) {
+      ver = SCHEMA_VERSION
+    } else if (ver < 2) {
       this.migrateToV2()
+      ver = 2
     }
+    if (ver < 3) this.migrateToV3()
 
     // Plain-column indexes (tenant_id, created_at, visitor_id, etc.) are generated into
     // SCHEMA_SQL_SQLITE from seed-data.ts's declarative `idx` field — see the `if` block above.
@@ -200,6 +206,10 @@ export class NodeSqliteBuiltinAdapter implements StorageAdapter {
 
   private migrateToV2(): void {
     migrateSqliteToV2({ exec: sql => this.db.exec(sql), all: (sql: string) => this.db.prepare(sql).all() as Record<string, unknown>[] }, this.dbPath)
+  }
+
+  private migrateToV3(): void {
+    migrateSqliteToV3({ exec: sql => this.db.exec(sql), all: (sql: string) => this.db.prepare(sql).all() as Record<string, unknown>[] })
   }
 
   // ── Profiles ──────────────────────────────────────────────────────────────
@@ -849,8 +859,8 @@ export class NodeSqliteBuiltinAdapter implements StorageAdapter {
   }
 
   async getSettings(tenantId: string): Promise<TenantSettings> {
-    const row = this.stmt('SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json FROM tenant_settings WHERE tenant_id = ?')
-      .get(tenantId) as { allowed_origins_json: string; admin_allowed_origins_json: string; setup_completed: number; profiles_seeded: number; tcf_confirmation_json: string | null; gpp_confirmation_json: string | null } | undefined
+    const row = this.stmt('SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, regime_json FROM tenant_settings WHERE tenant_id = ?')
+      .get(tenantId) as { allowed_origins_json: string; admin_allowed_origins_json: string; setup_completed: number; profiles_seeded: number; tcf_confirmation_json: string | null; gpp_confirmation_json: string | null; regime_json: string | null } | undefined
     return row
       ? {
         allowedOrigins: JSON.parse(row.allowed_origins_json) as string[],
@@ -859,6 +869,7 @@ export class NodeSqliteBuiltinAdapter implements StorageAdapter {
         profilesSeeded: !!row.profiles_seeded,
         tcfConfirmation: row.tcf_confirmation_json ? JSON.parse(row.tcf_confirmation_json) : undefined,
         gppConfirmation: row.gpp_confirmation_json ? JSON.parse(row.gpp_confirmation_json) : undefined,
+        ...regimeFromColumn(row.regime_json),
       }
       : {}
   }
@@ -867,12 +878,12 @@ export class NodeSqliteBuiltinAdapter implements StorageAdapter {
     const current = await this.getSettings(tenantId)
     const merged = { ...current, ...data }
     this.stmt(
-      `INSERT INTO tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, updated_at) VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT(tenant_id) DO UPDATE SET allowed_origins_json = excluded.allowed_origins_json, admin_allowed_origins_json = excluded.admin_allowed_origins_json, setup_completed = excluded.setup_completed, profiles_seeded = excluded.profiles_seeded, tcf_confirmation_json = excluded.tcf_confirmation_json, gpp_confirmation_json = excluded.gpp_confirmation_json, updated_at = excluded.updated_at`,
+      `INSERT INTO tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, regime_json, updated_at) VALUES (?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(tenant_id) DO UPDATE SET allowed_origins_json = excluded.allowed_origins_json, admin_allowed_origins_json = excluded.admin_allowed_origins_json, setup_completed = excluded.setup_completed, profiles_seeded = excluded.profiles_seeded, tcf_confirmation_json = excluded.tcf_confirmation_json, gpp_confirmation_json = excluded.gpp_confirmation_json, regime_json = excluded.regime_json, updated_at = excluded.updated_at`,
     ).run(
       tenantId, JSON.stringify(merged.allowedOrigins ?? []), JSON.stringify(merged.adminAllowedOrigins ?? []), merged.setupCompleted ? 1 : 0,
       merged.profilesSeeded ? 1 : 0, merged.tcfConfirmation ? JSON.stringify(merged.tcfConfirmation) : null, merged.gppConfirmation ? JSON.stringify(merged.gppConfirmation) : null,
-      new Date().toISOString(),
+      regimeToColumn(merged), new Date().toISOString(),
     )
     return this.getSettings(tenantId)
   }

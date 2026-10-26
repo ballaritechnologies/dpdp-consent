@@ -243,6 +243,11 @@ const GROUPS: SitemapGroup[] = [
         desc: 'Serving jurisdiction-specific profiles',
       },
       {
+        href: '/guides/backend/consent-regimes',
+        label: 'Consent Regimes',
+        desc: 'Per-site DPDP / DPDP + GDPR routing',
+      },
+      {
         href: '/guides/backend/storage',
         label: 'Storage',
         desc: 'Storage adapters and data persistence',

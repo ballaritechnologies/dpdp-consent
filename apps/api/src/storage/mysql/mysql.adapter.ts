@@ -1,6 +1,7 @@
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise'
 import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
 import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_MYSQL, SCHEMA_VERSION, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
+import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import { likePrefix } from '../../utils/sql-search'
 import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
 import type {
@@ -98,6 +99,7 @@ interface RowTenant extends RowDataPacket { id: string; name: string; slug: stri
 interface RowTenantSettings extends RowDataPacket {
   allowed_origins_json: string; admin_allowed_origins_json: string; setup_completed: number
   profiles_seeded: number; tcf_confirmation_json: string | null; gpp_confirmation_json: string | null
+  regime_json: string | null
 }
 
 // ── Mappers ────────────────────────────────────────────────────────────────────
@@ -302,13 +304,26 @@ export class MySQLAdapter implements StorageAdapter {
         await conn.query('INSERT IGNORE INTO consenti_schema_version (version) VALUES (?)', [SCHEMA_VERSION])
       } else {
         const [rows] = await conn.query<RowDataPacket[]>('SELECT MAX(version) AS version FROM consenti_schema_version')
-        if ((rows[0]?.['version'] ?? 0) < 2) {
+        const version = Number(rows[0]?.['version'] ?? 0)
+        if (version < 2) {
           try {
             await this.migrateToV2(conn)
           } catch (err) {
             throw new Error(
               `Upgrading the database schema to v2 failed: ${err instanceof Error ? err.message : String(err)}. ` +
               `The database user needs the ALTER privilege. This step only changes table structure, never rows, ` +
+              `and is safe to re-run: fix the cause and start again.`,
+              { cause: err },
+            )
+          }
+        }
+        if (version < 3) {
+          try {
+            await this.migrateToV3(conn)
+          } catch (err) {
+            throw new Error(
+              `Upgrading the database schema to v3 failed: ${err instanceof Error ? err.message : String(err)}. ` +
+              `The database user needs the ALTER privilege. This step only adds a column, never changes rows, ` +
               `and is safe to re-run: fix the cause and start again.`,
               { cause: err },
             )
@@ -340,7 +355,16 @@ export class MySQLAdapter implements StorageAdapter {
       )
       if (cols.length === 0) await conn.query(`ALTER TABLE ${table} ADD COLUMN profile_version INT NULL`)
     }
-    await conn.query('INSERT IGNORE INTO consenti_schema_version (version) VALUES (?)', [SCHEMA_VERSION])
+    await conn.query('INSERT IGNORE INTO consenti_schema_version (version) VALUES (2)')
+  }
+
+  private async migrateToV3(conn: PoolConnection): Promise<void> {
+    const [cols] = await conn.query<RowDataPacket[]>(
+      `SELECT 1 FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consenti_tenant_settings' AND COLUMN_NAME = 'regime_json'`,
+    )
+    if (cols.length === 0) await conn.query('ALTER TABLE consenti_tenant_settings ADD COLUMN regime_json LONGTEXT NULL')
+    await conn.query('INSERT IGNORE INTO consenti_schema_version (version) VALUES (3)')
   }
 
   private async seed(conn: PoolConnection): Promise<void> {
@@ -948,7 +972,7 @@ export class MySQLAdapter implements StorageAdapter {
 
   async getSettings(tenantId: string): Promise<TenantSettings> {
     const rows = await this.q<RowTenantSettings>(
-      'SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json FROM consenti_tenant_settings WHERE tenant_id=?', [tenantId],
+      'SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, regime_json FROM consenti_tenant_settings WHERE tenant_id=?', [tenantId],
     )
     const r = rows[0]
     return r
@@ -959,6 +983,7 @@ export class MySQLAdapter implements StorageAdapter {
         profilesSeeded: !!r.profiles_seeded,
         tcfConfirmation: r.tcf_confirmation_json ? JSON.parse(r.tcf_confirmation_json) : undefined,
         gppConfirmation: r.gpp_confirmation_json ? JSON.parse(r.gpp_confirmation_json) : undefined,
+        ...regimeFromColumn(r.regime_json),
       }
       : {}
   }
@@ -967,11 +992,12 @@ export class MySQLAdapter implements StorageAdapter {
     const current = await this.getSettings(tenantId)
     const merged = { ...current, ...data }
     await this.exec(
-      `INSERT INTO consenti_tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, updated_at) VALUES (?,?,?,?,?,?,?,NOW())
-       ON DUPLICATE KEY UPDATE allowed_origins_json=VALUES(allowed_origins_json), admin_allowed_origins_json=VALUES(admin_allowed_origins_json), setup_completed=VALUES(setup_completed), profiles_seeded=VALUES(profiles_seeded), tcf_confirmation_json=VALUES(tcf_confirmation_json), gpp_confirmation_json=VALUES(gpp_confirmation_json), updated_at=NOW()`,
+      `INSERT INTO consenti_tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, regime_json, updated_at) VALUES (?,?,?,?,?,?,?,?,NOW())
+       ON DUPLICATE KEY UPDATE allowed_origins_json=VALUES(allowed_origins_json), admin_allowed_origins_json=VALUES(admin_allowed_origins_json), setup_completed=VALUES(setup_completed), profiles_seeded=VALUES(profiles_seeded), tcf_confirmation_json=VALUES(tcf_confirmation_json), gpp_confirmation_json=VALUES(gpp_confirmation_json), regime_json=VALUES(regime_json), updated_at=NOW()`,
       [
         tenantId, JSON.stringify(merged.allowedOrigins ?? []), JSON.stringify(merged.adminAllowedOrigins ?? []), merged.setupCompleted ? 1 : 0,
         merged.profilesSeeded ? 1 : 0, merged.tcfConfirmation ? JSON.stringify(merged.tcfConfirmation) : null, merged.gppConfirmation ? JSON.stringify(merged.gppConfirmation) : null,
+        regimeToColumn(merged),
       ],
     )
     return this.getSettings(tenantId)

@@ -2,6 +2,7 @@ export * from "./methods/debounce.js";
 export * from "./methods/throttle.js";
 export * from "./terminal-color.js";
 export * from "./compliance.js";
+export * from "./regime.js";
 export * from "./tracker-knowledge-base.js";
 export * from "./content-doc.js";
 export * from "./tcf.js";

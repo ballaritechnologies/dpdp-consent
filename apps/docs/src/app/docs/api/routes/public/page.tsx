@@ -209,6 +209,15 @@ export default function PublicRoutesPage() {
         <code>s3Api</code> config docs if you want an external CDN or edge function to serve
         straight from S3 instead.
       </p>
+      <p>
+        If the site has a <a href="/guides/backend/consent-regimes">consent regime</a> set, it is
+        applied after the jurisdiction map: <code>dpdp</code> routes every visitor to{' '}
+        <code>opt-in-dpdpa</code>; <code>dpdp_gdpr</code> routes India to <code>opt-in-dpdpa</code>,
+        the EU/EEA/UK to <code>opt-in</code>, and every other or unknown location to the site&apos;s
+        configured default group. A site with no regime keeps plain jurisdiction-map routing.
+        Responds <code>501</code> if the regime is <code>strictest_global</code> (not implemented
+        yet).
+      </p>
       <table>
         <thead>
           <tr>
@@ -229,6 +238,19 @@ export default function PublicRoutesPage() {
               <code>encodeGeoHints()</code>. All of it is forwarded to a custom{' '}
               <code>geoDataProvider</code> as <code>{'{ timezone, language, languages, locale }'}</code>{' '}
               (at most 20 languages, each tag up to 35 characters; anything else is dropped).
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>tenant</code>
+            </td>
+            <td>Optional</td>
+            <td>
+              Site/tenant id, sent automatically by the widget when <code>core.tenantId</code> (or{' '}
+              <code>api.tenantId</code>) is not <code>default</code>. Selects that site&apos;s regime
+              and active profiles. Honoured only when the server runs with{' '}
+              <code>multiTenant.enabled</code>; ignored otherwise. Ids outside 1–64 letters, digits,{' '}
+              <code>-</code> or <code>_</code> are rejected with <code>400</code>.
             </td>
           </tr>
           <tr>

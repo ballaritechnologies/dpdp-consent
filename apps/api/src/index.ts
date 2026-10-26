@@ -30,6 +30,7 @@ import { ConsentService } from './services/consent.service'
 import { VisitorService } from './services/visitor.service'
 import { NoticeService } from './services/notice.service'
 import { UserService } from './services/user.service'
+import { RegimeService } from './services/regime.service'
 import { LocalAuth } from './auth/local.auth'
 import { buildProfileRoutes } from './routes/public/profile.routes'
 import { buildConsentRoutes } from './routes/public/consent.routes'
@@ -461,6 +462,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     (id, version) => profileService.getArchivedSnapshot(id, version),
   )
   const userService = new UserService(userRepo, auditRepo)
+  const regimeService = new RegimeService(tenantId => storage.getSettings(tenantId))
 
   const adminSecret = authConfig.masterSecret ?? ''
   const localAuth = new LocalAuth(storage, adminSecret)
@@ -523,7 +525,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
         prefix: apiBase,
         rateLimit: true,
         routes: {
-          ...buildProfileRoutes(profileService, geoResolver, profilesDir, apiBase),
+          ...buildProfileRoutes(profileService, geoResolver, profilesDir, apiBase, { regime: regimeService, multiTenant: multiTenantEnabled }),
           ...buildConsentRoutes(consentService, visitorService, profileService, resolveTenantId, storage, compliance.dataSigningHash, eventBus, compliance.parentalConsentTokenTtlDays ?? 7),
           ...buildNoticeRoutes(noticeService),
           ...buildTcfStatusRoutes(storage, compliance.tcf),

@@ -442,8 +442,10 @@ export class ProfileService {
     return response
   }
 
-  findActiveByComplianceGroup(complianceGroup: string): Promise<Profile | null> {
-    return this.profiles.findActiveByComplianceGroup(this.tenantId, complianceGroup)
+  /** `tenantId` defaults to this service's own tenant — passed explicitly only by the public
+   * geo-routing endpoints, which resolve the tenant per request. */
+  findActiveByComplianceGroup(complianceGroup: string, tenantId: string = this.tenantId): Promise<Profile | null> {
+    return this.profiles.findActiveByComplianceGroup(tenantId, complianceGroup)
   }
 
   list(): Promise<Profile[]> {

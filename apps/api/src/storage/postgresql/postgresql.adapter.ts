@@ -1,6 +1,7 @@
 import type { Pool, PoolClient, QueryResult } from 'pg'
 import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
 import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_POSTGRES, SCHEMA_VERSION, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
+import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import { likePrefix } from '../../utils/sql-search'
 import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
 import type {
@@ -279,6 +280,7 @@ export class PostgreSQLAdapter implements StorageAdapter {
           await this.seedTx(client)
           await client.query('INSERT INTO consenti_schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING', [SCHEMA_VERSION])
           await client.query('COMMIT')
+          version = SCHEMA_VERSION
         } catch (err) {
           await client.query('ROLLBACK')
           throw new Error(
@@ -295,6 +297,19 @@ export class PostgreSQLAdapter implements StorageAdapter {
         } catch (err) {
           throw new Error(
             `Upgrading the database schema to v2 failed: ${err instanceof Error ? err.message : String(err)}. ` +
+            `The database user must own the tables (or be a superuser). Nothing was changed — the upgrade runs ` +
+            `in one transaction and was rolled back; fix the cause and start again.`,
+            { cause: err },
+          )
+        }
+        version = 2
+      }
+      if (version < 3) {
+        try {
+          await this.migrateToV3(client)
+        } catch (err) {
+          throw new Error(
+            `Upgrading the database schema to v3 failed: ${err instanceof Error ? err.message : String(err)}. ` +
             `The database user must own the tables (or be a superuser). Nothing was changed — the upgrade runs ` +
             `in one transaction and was rolled back; fix the cause and start again.`,
             { cause: err },
@@ -320,7 +335,19 @@ export class PostgreSQLAdapter implements StorageAdapter {
       }
       await client.query('ALTER TABLE consenti_consent_records ADD COLUMN IF NOT EXISTS profile_version INTEGER')
       await client.query('ALTER TABLE consenti_consent_history ADD COLUMN IF NOT EXISTS profile_version INTEGER')
-      await client.query('INSERT INTO consenti_schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING', [SCHEMA_VERSION])
+      await client.query('INSERT INTO consenti_schema_version (version) VALUES (2) ON CONFLICT DO NOTHING')
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    }
+  }
+
+  private async migrateToV3(client: PoolClient): Promise<void> {
+    await client.query('BEGIN')
+    try {
+      await client.query('ALTER TABLE consenti_tenant_settings ADD COLUMN IF NOT EXISTS regime_json JSONB')
+      await client.query('INSERT INTO consenti_schema_version (version) VALUES (3) ON CONFLICT DO NOTHING')
       await client.query('COMMIT')
     } catch (err) {
       await client.query('ROLLBACK')
@@ -983,8 +1010,9 @@ export class PostgreSQLAdapter implements StorageAdapter {
     const rows = await this.q<{
       allowed_origins_json: string[]; admin_allowed_origins_json: string[]; setup_completed: boolean
       profiles_seeded: boolean; tcf_confirmation_json: TenantSettings['tcfConfirmation'] | null; gpp_confirmation_json: TenantSettings['gppConfirmation'] | null
+      regime_json: unknown
     }>(
-      'SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json FROM consenti_tenant_settings WHERE tenant_id=$1', [tenantId],
+      'SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, regime_json FROM consenti_tenant_settings WHERE tenant_id=$1', [tenantId],
     )
     const r = rows[0]
     return r
@@ -995,6 +1023,7 @@ export class PostgreSQLAdapter implements StorageAdapter {
         profilesSeeded: r.profiles_seeded,
         ...(r.tcf_confirmation_json ? { tcfConfirmation: r.tcf_confirmation_json } : {}),
         ...(r.gpp_confirmation_json ? { gppConfirmation: r.gpp_confirmation_json } : {}),
+        ...regimeFromColumn(r.regime_json),
       }
       : {}
   }
@@ -1003,11 +1032,12 @@ export class PostgreSQLAdapter implements StorageAdapter {
     const current = await this.getSettings(tenantId)
     const merged = { ...current, ...data }
     await this.q(
-      `INSERT INTO consenti_tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, updated_at) VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7::jsonb,NOW())
-       ON CONFLICT (tenant_id) DO UPDATE SET allowed_origins_json=$2::jsonb, admin_allowed_origins_json=$3::jsonb, setup_completed=$4, profiles_seeded=$5, tcf_confirmation_json=$6::jsonb, gpp_confirmation_json=$7::jsonb, updated_at=NOW()`,
+      `INSERT INTO consenti_tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, regime_json, updated_at) VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,NOW())
+       ON CONFLICT (tenant_id) DO UPDATE SET allowed_origins_json=$2::jsonb, admin_allowed_origins_json=$3::jsonb, setup_completed=$4, profiles_seeded=$5, tcf_confirmation_json=$6::jsonb, gpp_confirmation_json=$7::jsonb, regime_json=$8::jsonb, updated_at=NOW()`,
       [
         tenantId, JSON.stringify(merged.allowedOrigins ?? []), JSON.stringify(merged.adminAllowedOrigins ?? []), merged.setupCompleted ?? false,
         merged.profilesSeeded ?? false, merged.tcfConfirmation ? JSON.stringify(merged.tcfConfirmation) : null, merged.gppConfirmation ? JSON.stringify(merged.gppConfirmation) : null,
+        regimeToColumn(merged),
       ],
     )
     return this.getSettings(tenantId)

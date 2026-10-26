@@ -276,6 +276,8 @@ const tenantSettings: TableDef = {
     // RegistrationConfirmation JSON — hash only, never the live cmpId/cmpVersion (see api.ts).
     { n: 'tcf_confirmation_json',       t: 'json', null: true },
     { n: 'gpp_confirmation_json',       t: 'json', null: true },
+    // { regime, regimeDefaultGroup } — per-site routing policy (see packages/utils/src/regime.ts).
+    { n: 'regime_json',                 t: 'json', null: true },
     { n: 'updated_at',                  t: 'ts', def: '$now', mysqlUpd: true },
   ],
   pk: ['tenant_id'],
@@ -313,8 +315,9 @@ const uiTemplates: TableDef = {
 //   v1 → v2  drop the profile_id foreign keys on consent_records / notice_shown (a consent record
 //            is evidence and must outlive its profile) and add profile_version to
 //            consent_records / consent_history.
-// MongoDB and the JSON file adapter are schemaless — the new field is simply optional there.
-export const SCHEMA_VERSION = 2
+//   v2 → v3  add the nullable regime_json column to tenant_settings (per-site consent regime).
+// MongoDB and the JSON file adapter are schemaless — the new fields are simply optional there.
+export const SCHEMA_VERSION = 3
 
 /**
  * Prefix on every table (PostgreSQL / MySQL) and collection (MongoDB), so Consenti never collides

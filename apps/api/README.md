@@ -70,6 +70,7 @@ SQL drivers (SQLite, PostgreSQL, MySQL/MariaDB) track a schema version (the `con
 | Version | Change |
 |---|---|
 | 2 | `consent_records.profile_id` / `notice_shown.profile_id` no longer reference `profiles` (a consent record is evidence and survives deleting its profile); `profile_version` added to `consent_records` and `consent_history` — with `profile_id` it pins the exact on-disk snapshot a visitor was shown. |
+| 3 | Nullable `regime_json` column added to `tenant_settings` (per-site consent regime, see [Consent regimes](#consent-regimes)). Additive only: no table rebuild and no SQLite backup copy. |
 
 The upgrade changes table structure only — it never edits, drops or re-creates your rows — and is built to fail safe:
 
@@ -617,6 +618,21 @@ Response:
 When `found` is `false` (no active profile for this tenant/group), `path` is `null` and the widget automatically falls back to the embedded profile for the resolved `complianceGroup`. This means the widget works even before you have seeded profiles for every compliance group.
 
 Legacy query params `?tz=`, `?lang=`, `?locale=` are still accepted for backward compatibility — the `data` param takes priority when both are present.
+
+With `multiTenant.enabled`, `?tenant=<tenantId>` selects which site's regime and active profiles to use (the widget sends it automatically when its `tenantId` isn't `default`). Without multi-tenant mode it is ignored. An id that isn't 1–64 letters, digits, `-` or `_` gets `400`.
+
+### Consent regimes
+
+A site can set a **regime**, a routing policy applied after the jurisdiction map:
+
+| Regime | India | EU / EEA / UK | Everyone else, unknown location |
+|---|---|---|---|
+| *unset* | jurisdiction map (unchanged behaviour) | | |
+| `dpdp` | `opt-in-dpdpa` | `opt-in-dpdpa` | `opt-in-dpdpa` |
+| `dpdp_gdpr` | `opt-in-dpdpa` | `opt-in` | `regimeDefaultGroup` (default `opt-in`) |
+| `strictest_global` | planned, not implemented: rejected with `501` | | |
+
+Set it in the dashboard (Settings → Consent regime) or with `PATCH /consenti/admin/v1/settings[?tenantId=…]` and `{ "regime": "dpdp_gdpr", "regimeDefaultGroup": "opt-out" }` (`null` clears either field). Changes are audit-logged as `settings:regime_updated`. The UK matches as both `GB` and `UK`; Switzerland is not EU/EEA/UK and gets the default group. Choosing a regime is not legal advice. See the [Consent regimes guide](https://consenti.dev/guides/backend/consent-regimes).
 
 ### Submit consent
 

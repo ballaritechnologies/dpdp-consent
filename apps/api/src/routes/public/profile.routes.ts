@@ -1,5 +1,8 @@
 import type { ProfileService } from '../../services/profile.service'
-import type { GeoResolverService } from '../../services/geo-resolver.service'
+import type { GeoResolverService, ResolvedGeo } from '../../services/geo-resolver.service'
+import type { RegimeService } from '../../services/regime.service'
+import { RegimeNotImplementedError } from '@consenti/utils'
+import { isSafeTenantId } from '../../utils/path-segment'
 import { json } from '../../utils/http'
 import { parseAcceptLanguage, sanitizeLanguages, sanitizeLocale } from '../../utils/geo-hints'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
@@ -21,12 +24,39 @@ function redirectToDefault(basePath: string, tenantId: string, complianceGroup: 
   })
 }
 
+export interface ProfileRouteOptions {
+  /** Applies the tenant's consent regime on top of the jurisdiction map. Omitted → map only. */
+  regime?: RegimeService
+  /** Honour the `?tenant=` query param on the geo-routing endpoints. Off (single-tenant) →
+   * always `'default'`, whatever the request says. */
+  multiTenant?: boolean
+}
+
 export function buildProfileRoutes(
   profiles: ProfileService,
   geoResolver?: GeoResolverService,
   profilesDir?: string,
   basePath = '',
+  options: ProfileRouteOptions = {},
 ) {
+  /** `null` → the request named a tenant id that can't be one (and can't be a safe directory name). */
+  function publicTenant(url: URL): string | null {
+    const requested = url.searchParams.get('tenant')
+    if (!options.multiTenant || requested === null || requested === '') return 'default'
+    return isSafeTenantId(requested) ? requested : null
+  }
+
+  /** Jurisdiction-map result with the tenant's regime applied; a `Response` when the regime can't be served. */
+  async function routeVisitor(tenantId: string, geo: ResolvedGeo): Promise<ResolvedGeo | Response> {
+    if (!options.regime) return geo
+    try {
+      return await options.regime.apply(tenantId, geo)
+    } catch (err) {
+      if (err instanceof RegimeNotImplementedError) return errorResponse(501, err.message)
+      throw err
+    }
+  }
+
   return {
     // Static file route — primary hot-serve path, zero DB when file exists
     'GET /profiles/:tenantId/:complianceGroupOrProfileId/:locale': async (
@@ -73,6 +103,8 @@ export function buildProfileRoutes(
       withErrorHandler(async () => {
         if (!geoResolver) return errorResponse(501, 'Geo compliance routing not configured')
         const url = new URL(request.url)
+        const tenantId = publicTenant(url)
+        if (tenantId === null) return errorResponse(400, 'Invalid tenant')
 
         const ip =
           request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
@@ -102,14 +134,16 @@ export function buildProfileRoutes(
           }
         }
 
-        const geo = await geoResolver.resolve({ ip, language, languages, timezone, locale: sanitizeLocale(requestedLocale) })
+        const routed = await routeVisitor(tenantId, await geoResolver.resolve({ ip, language, languages, timezone, locale: sanitizeLocale(requestedLocale) }))
+        if (routed instanceof Response) return routed
+        const geo = routed
         const sensitiveOptIn = geo.requiresSensitiveOptIn ? { requiresSensitiveOptIn: true } : {}
 
         if (!geo.complianceGroup) {
           return json(200, { path: null, complianceGroup: 'opt-in', locale: requestedLocale || 'en', found: false, ...sensitiveOptIn })
         }
 
-        const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup)
+        const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup, tenantId)
         if (!profile) {
           return json(200, { path: null, complianceGroup: geo.complianceGroup, locale: requestedLocale || 'en', found: false, ...sensitiveOptIn })
         }
@@ -127,7 +161,6 @@ export function buildProfileRoutes(
         }
 
         const complianceGroup = geo.complianceGroup
-        const tenantId = profile.tenantId
 
         // Check if the resolved static file exists on disk
         let found = false
@@ -179,14 +212,18 @@ export function buildProfileRoutes(
         if (!geoResolver) return errorResponse(501, 'Geo compliance routing not configured')
         const locale = params['locale'] ?? 'en'
         const url = new URL(request.url)
+        const tenantId = publicTenant(url)
+        if (tenantId === null) return errorResponse(400, 'Invalid tenant')
         const ip =
           request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
           request.headers.get('x-real-ip') ?? ''
         const timezone = url.searchParams.get('tz') ?? ''
         const language = request.headers.get('accept-language') ?? url.searchParams.get('lang') ?? ''
-        const geo = await geoResolver.resolve({ ip, language, languages: parseAcceptLanguage(language), timezone, locale })
+        const routed = await routeVisitor(tenantId, await geoResolver.resolve({ ip, language, languages: parseAcceptLanguage(language), timezone, locale }))
+        if (routed instanceof Response) return routed
+        const geo = routed
         if (!geo.complianceGroup) return errorResponse(404, 'Could not resolve compliance group for this location')
-        const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup)
+        const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup, tenantId)
         if (!profile) return errorResponse(404, `No active profile found for compliance group: ${geo.complianceGroup}`)
         const result = await profiles.getResolved(profile.id, locale)
         if (!result) return errorResponse(404, 'Profile not found')

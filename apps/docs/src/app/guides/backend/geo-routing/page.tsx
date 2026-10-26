@@ -320,10 +320,12 @@ createConsenti({
             question: 'What happens if geo-resolution fails or is uncertain?',
             answer: (
               <p className="m-0">
-                If the resolver returns <code>null</code> for country, Consenti falls back to the
-                <code>general-privacy-consent</code> group — a permissive opt-in profile suitable
-                for visitors whose jurisdiction cannot be determined. The widget then falls back
-                again to the pre-built profile for that group if no active profile is found.
+                If the resolver returns <code>null</code> for country, <code>/resolve-profile</code>{' '}
+                answers with the <code>opt-in</code> group and <code>found: false</code>, and the
+                widget falls back to its pre-built profile. A site with the <code>dpdp</code> or{' '}
+                <code>dpdp_gdpr</code> <a href="/guides/backend/consent-regimes">consent regime</a>{' '}
+                routes unknown locations to the DPDP flow or to its configured default group
+                instead.
               </p>
             ),
           },

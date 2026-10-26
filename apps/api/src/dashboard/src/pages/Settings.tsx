@@ -3,6 +3,8 @@ import { usePageTitle } from '../context/pageTitle'
 import { useAuth } from '../context/auth'
 import { useT } from '../context/locale'
 import { apiDownload } from '../api/client'
+import { PermissionGate } from '../components/PermissionGate'
+import { RegimeSettings } from '../components/RegimeSettings'
 
 export function Settings({ current }: { current: string }) {
   const { user } = useAuth()
@@ -32,6 +34,10 @@ export function Settings({ current }: { current: string }) {
             </a>
           </div>
         </div>
+
+        <PermissionGate perm="settings:update">
+          <RegimeSettings />
+        </PermissionGate>
 
         <div class="bg-white rounded-lg border border-gray-200 p-5">
           <h2 class="text-sm font-semibold text-gray-700 mb-2">{t('settings.export.heading')}</h2>

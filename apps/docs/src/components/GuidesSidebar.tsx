@@ -44,6 +44,7 @@ const BACKEND_GUIDES_NAV: NavSection[] = [
       { href: '/guides/backend/minimal-setup', label: 'Minimal Setup' },
       { href: '/guides/backend/consent-flow', label: 'How Consent Flow Works' },
       { href: '/guides/backend/geo-routing', label: 'Geo-Routing & Auto-Detection' },
+      { href: '/guides/backend/consent-regimes', label: 'Consent Regimes (DPDP / GDPR)' },
       { href: '/guides/backend/storage', label: 'Choosing a Storage Driver' },
       { href: '/guides/backend/auth', label: 'Auth Modes' },
       { href: '/guides/backend/server-side-enforcement', label: 'Server-Side Enforcement' },

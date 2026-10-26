@@ -1816,8 +1816,11 @@ ${AUTH_HEADER}`,
 
       <h2>Settings</h2>
       <p>
-        Tenant-wide dashboard settings — the Public and Admin API origin allowlists shown on the API
-        Config page (split into two panels, one per API).
+        Per-site settings — the Public and Admin API origin allowlists shown on the API Config page
+        (split into two panels, one per API), and the site&apos;s consent regime shown on the
+        Settings page. Both endpoints take an optional <code>?tenantId=</code> (default{' '}
+        <code>default</code>); the caller must be allowed that tenant (<code>403</code>) and it must
+        exist (<code>404</code>).
       </p>
       <ul>
         <li>
@@ -1839,6 +1842,23 @@ ${AUTH_HEADER}`,
       <p>
         Both lists accept full origins (<code>https://example.com</code>) or a wildcard subdomain
         pattern (<code>*.example.com</code>). Empty/unset on either means no restriction.
+      </p>
+      <ul>
+        <li>
+          <code>regime</code> — <code>dpdp</code>, <code>dpdp_gdpr</code>, or <code>null</code> to
+          clear it (plain jurisdiction-map routing). <code>strictest_global</code> is reserved and
+          returns <code>501</code> until it is implemented. See{' '}
+          <a href="/guides/backend/consent-regimes">Consent regimes</a>.
+        </li>
+        <li>
+          <code>regimeDefaultGroup</code> — for <code>dpdp_gdpr</code>: the compliance group for
+          visitors outside India and the EU/EEA/UK, and for unknown locations. Any built-in group id,
+          or <code>null</code> (then <code>opt-in</code>).
+        </li>
+      </ul>
+      <p>
+        Every change to either regime field is written to the audit log as{' '}
+        <code>settings:regime_updated</code>, with the old and new values.
       </p>
 
       <h3>
@@ -1879,6 +1899,24 @@ Content-Type: application/json
             label: 'Response 200',
             lang: 'json',
             code: `{ "allowedOrigins": ["https://example.com", "https://foo.example.com"] }`,
+          },
+        ]}
+      />
+      <CodeTabs
+        tabs={[
+          {
+            label: 'Set a regime',
+            lang: 'javascript',
+            code: `// PATCH /consenti/admin/v1/settings?tenantId=default HTTP/1.1
+${AUTH_HEADER}
+Content-Type: application/json
+
+{ "regime": "dpdp_gdpr", "regimeDefaultGroup": "opt-out" }`,
+          },
+          {
+            label: 'Response 200',
+            lang: 'json',
+            code: `{ "allowedOrigins": [], "adminAllowedOrigins": [], "regime": "dpdp_gdpr", "regimeDefaultGroup": "opt-out" }`,
           },
         ]}
       />

@@ -364,7 +364,7 @@ new ConsentiSetup({
 |---|---|---|
 | **1A** | `api.enabled = false`, `compliance.type = 'auto'` | Timezone + language → group → pre-built profile |
 | **1B** | `api.enabled = false`, `compliance.type = ComplianceGroupId` | Direct pre-built profile load |
-| **2A** | `api.enabled = true`, `compliance.type = 'auto'` | `GET /resolve-profile?tz&lang&locale&tenantId` → `filePath` → static JSON |
+| **2A** | `api.enabled = true`, `compliance.type = 'auto'` | `GET /resolve-profile?data=<hints>[&tenant=<tenantId>]` → `filePath` → static JSON (`tenant` is sent only when `tenantId` isn't `default`, so the server can apply that site's consent regime) |
 | **2B** | `api.enabled = true`, `compliance.type = ComplianceGroupId` | `GET /profiles/:tenantId/:group/:locale` |
 | **Local** | `compliance.type = localKey` + registered `ConsentiProfile` | Locally registered profile |
 | **Fallback** | Any fetch failure | Pre-built profile → `DEFAULT_PROFILE` |

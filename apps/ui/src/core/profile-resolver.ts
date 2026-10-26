@@ -425,6 +425,8 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
   // profile id, so a since-deactivated/replaced profile for that group is never silently served.
   // Falls through to the normal geo-resolve below if the direct fetch fails or no group is known
   // yet (genuinely undecided visitor, or a pre-existing cookie recorded before this field existed).
+  // TODO(legal): a regime change only reaches this visitor once their consent expires
+  // (docs/legal-open-questions.md, Q-R4).
   const knownGroup = peekConsentGroup(config.core?.storage ?? 'cookie', config.core?.cookieName)
   if (knownGroup) {
     const json = await fetchProfileJson(
@@ -437,8 +439,11 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
     if (json && isDomainAllowed(json, trustDomain)) return { ...mapPublicProfileToResolved(json), complianceGroup: knownGroup }
   }
 
+  // `tenant` lets a multi-tenant server apply this site's own consent regime and profiles;
+  // omitted for the default tenant so single-tenant URLs stay exactly as before.
   const resolveUrl =
-    `${base}/consenti/api/v1/resolve-profile?data=${encodeURIComponent(encodeGeoHints(locale))}`
+    `${base}/consenti/api/v1/resolve-profile?data=${encodeURIComponent(encodeGeoHints(locale))}` +
+    (tenantId !== 'default' ? `&tenant=${encodeURIComponent(tenantId)}` : '')
 
   let path: string | null
   let complianceGroup: ComplianceGroupId

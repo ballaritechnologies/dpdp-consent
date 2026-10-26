@@ -1,5 +1,5 @@
 import type { ProfileConfig, ConsentValue, MainBanner, GpcBanner, PreferenceModal, AgeGateModalContent } from './ui'
-import type { ComplianceGroupId } from './compliance'
+import type { ComplianceGroupId, Regime } from './compliance'
 
 /** Resolved content for one non-default locale — template shape merged with that locale's
  * author text, computed client-side (dashboard) the same way the default locale's content on
@@ -383,6 +383,15 @@ export interface TenantSettings {
    * `compliance.gpp.{cmpId, cmpVersion}`. Self-attestation only — IAB doesn't publish a
    * CMP-List equivalent for GPP, so there's no external registry to validate against. */
   gppConfirmation?: RegistrationConfirmation
+  /** Per-site consent regime applied by `GET /resolve-profile` and `GET /profiles/auto/:locale`
+   * before the jurisdiction map. Unset keeps plain jurisdiction-map routing (the behaviour before
+   * regimes existed). `'strictest_global'` is reserved and rejected until implemented.
+   * Explicitly `undefined` in an `updateSettings()` call clears it. */
+  regime?: Regime | undefined
+  /** `dpdp_gdpr` only: group for visitors outside India and the EU/EEA/UK, and for visitors whose
+   * country can't be resolved. Defaults to `'opt-in'` when unset. Explicitly `undefined` in an
+   * `updateSettings()` call clears it. */
+  regimeDefaultGroup?: ComplianceGroupId | undefined
 }
 
 /** Hash-based confirmation record — proves a specific `{cmpId, cmpVersion}` config was reviewed

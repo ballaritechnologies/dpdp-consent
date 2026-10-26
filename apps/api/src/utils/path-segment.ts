@@ -53,3 +53,11 @@ export function findUnsafePathSegment(fields: {
   }
   return null
 }
+
+const TENANT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+/** Tenant ids are UUIDs (or `'default'`) and become the first directory under `profiles/`, so an
+ * untrusted one from a public request is only accepted in that shape. */
+export function isSafeTenantId(value: unknown): value is string {
+  return typeof value === 'string' && TENANT_ID.test(value) && !WINDOWS_RESERVED.test(value)
+}

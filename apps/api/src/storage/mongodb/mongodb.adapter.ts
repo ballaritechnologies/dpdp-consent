@@ -2,6 +2,7 @@ import type { MongoClient, Db } from 'mongodb'
 import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
 import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, ALL_INDEXES, LEGACY_PROBE_NAMES, prefixed, legacyInstallError } from '../seed-data'
 import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
+import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import type {
   StorageAdapter, StorageConfig, Profile, StoredProfileJson,
   CreateProfileInput, UpdateProfileInput,
@@ -917,6 +918,7 @@ export class MongoDBAdapter implements StorageAdapter {
     const doc = cast<{
       _id: string; allowed_origins?: string[]; admin_allowed_origins?: string[]; setup_completed?: boolean
       profiles_seeded?: boolean; tcf_confirmation?: TenantSettings['tcfConfirmation']; gpp_confirmation?: TenantSettings['gppConfirmation']
+      regime?: unknown
     }>(
       await this.col('tenant_settings').findOne({ _id: tenantId })
     )
@@ -927,6 +929,7 @@ export class MongoDBAdapter implements StorageAdapter {
       ...(doc?.profiles_seeded !== undefined ? { profilesSeeded: doc.profiles_seeded } : {}),
       ...(doc?.tcf_confirmation !== undefined ? { tcfConfirmation: doc.tcf_confirmation } : {}),
       ...(doc?.gpp_confirmation !== undefined ? { gppConfirmation: doc.gpp_confirmation } : {}),
+      ...regimeFromColumn(doc?.regime),
     }
   }
 
@@ -938,7 +941,15 @@ export class MongoDBAdapter implements StorageAdapter {
     if (data.profilesSeeded !== undefined) update['profiles_seeded'] = data.profilesSeeded
     if (data.tcfConfirmation !== undefined) update['tcf_confirmation'] = data.tcfConfirmation
     if (data.gppConfirmation !== undefined) update['gpp_confirmation'] = data.gppConfirmation
-    await this.col('tenant_settings').updateOne({ _id: tenantId }, { $set: update }, { upsert: true })
+    // `regime` is written whole (or cleared) whenever either field is present — the two are one setting.
+    const touchesRegime = 'regime' in data || 'regimeDefaultGroup' in data
+    const regime = touchesRegime ? regimeToColumn({ ...(await this.getSettings(tenantId)), ...data }) : null
+    if (touchesRegime && regime) update['regime'] = JSON.parse(regime) as unknown
+    await this.col('tenant_settings').updateOne(
+      { _id: tenantId },
+      touchesRegime && !regime ? { $set: update, $unset: { regime: '' } } : { $set: update },
+      { upsert: true },
+    )
     return this.getSettings(tenantId)
   }
 

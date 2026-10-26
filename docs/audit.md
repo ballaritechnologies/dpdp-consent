@@ -6,7 +6,7 @@
 
 > **Repo state.** When this audit was written the repo held only a one-line README, so it read a fresh upstream clone. Upstream has since been merged into this repo at the same commit (step 0 of section 6.3), so the file paths below apply here directly.
 
-> **Not verified at runtime.** The sandbox would not run `npm ci`, so typecheck and the existing tests were **not** run against upstream. Everything below comes from reading the source. Running `npm ci && npx turbo typecheck && npx turbo test` is the first job after the import, to get a baseline.
+> **Baseline (run after the import, Node 22, 2026-10-26).** `npm ci` OK. `npx turbo typecheck` passes for all workspaces including `apps/docs`. `npx turbo test`: `@consenti/ui` 46/46 and `@consenti/api` 84/84 pass. `npx turbo lint` runs no tasks, because no workspace defines a `lint` script, so CONTRIBUTING's lint step is currently a no-op. The findings below still come from reading the source.
 
 ---
 
@@ -194,7 +194,7 @@ Gaps found:
 | R7 | **Erased data kept in the append-only audit log** (`oldData`). | Medium | Phase 5: store a digest instead. Lawyer to confirm. |
 | R8 | **Geo heuristic default** (timezone/language) can misroute. For example, an Indian visitor with a non-`Asia/Kolkata` timezone or an EU expat. `dpdp_gdpr` relies on correct country data. | Medium | Recommend `geoip` or MaxMind in the docs. Make the unknown-country fallback configurable, defaulting to the stricter flow. Test it. |
 | R9 | **"Sticky" group for returning visitors** (`peekConsentGroup`): a visitor who travels keeps their first regime's flow. | Low | Document as intended (consent is tied to the notice given). Revisit in `strictest_global`. |
-| R10 | **No baseline test run** (this audit). The scanner has no tests, and API/UI tests are integration-only through `tsx --test`. | Medium | First action after import: `npm ci`, `turbo typecheck`, `turbo test`, recorded in the changelog. Add a unit-test harness for new code. |
+| R10 | The scanner has no tests. API/UI tests are integration-only through `tsx --test`. No workspace has a lint script. (Baseline typecheck and tests are green; see the top of this file.) | Medium | Add tests for new code using the same `tsx --test` runner. Add a scanner test harness in Phase 3. Decide whether to add ESLint. |
 | R11 | **Upstream AGENTS.md hard rules** (zero runtime deps in ui/api, strict TS, layered architecture, `changelog/YYYY-MM-DD-Vn.md`, i18n keys in all `apps/api/locale/*.json`, docs page updates in `apps/docs`) increase the per-feature surface. | Low | Follow them; they match hard rule 9. Budget time for docs and locale updates in every phase. |
 | R12 | **Reference dates and legal facts** (plan section 6) come from secondary sources. | — | Every DPDP-specific rule cites `TODO(legal)` until verified. Start `docs/legal-open-questions.md` in Phase 1. |
 

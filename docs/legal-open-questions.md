@@ -24,6 +24,6 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-A2 | How do the s.7 "legitimate uses" map to cookies and trackers? Is "strictly necessary" a valid framing under DPDP? | open |
 | Q-A3 | Can the append-only audit log keep a digest of an erased consent record, and for how long? (Today it keeps the full record.) | open |
 | Q-A4 | The children's threshold (under 18) and which sectors are exempt. | open |
-| Q-A5 | Trademark risk for "Consenti" (the upstream name) and for our new product name. See `docs/naming.md`. | open |
+| Q-A5 | Trademark clearance for the new product name (shortlist: Haami, Sammati, Ijazat), and whether "built on Consenti" is fine as attribution wording. Preliminary screen and the exact searches to run are in `docs/naming.md`. | open |
 | Q-A6 | Terms and consent for scanning third-party sites in the hosted checker. | open |
 | Q-A7 | Which Indian languages are required, and which only recommended, for notices (Eighth Schedule)? | open |

@@ -674,14 +674,14 @@ export class ProfileService {
     const existing = await this.profiles.findActiveByComplianceGroup(this.tenantId, complianceGroup)
     if (existing) return
 
-    const { DEFAULT_PROFILES, resolveLocaleTranslation } = await import('@consenti/utils/profiles')
+    const { DEFAULT_PROFILES, resolveLocaleTranslation, profileLocales } = await import('@consenti/utils/profiles')
     const embedded = DEFAULT_PROFILES[complianceGroup as keyof typeof DEFAULT_PROFILES]
     if (!embedded) return
 
     const enTranslation = embedded.translations['en']
     if (!enTranslation) return
 
-    const otherLocales = ['de', 'es', 'fr', 'ja']
+    const otherLocales = profileLocales(complianceGroup).filter(lang => lang !== 'en')
     const locales = ['en', ...otherLocales.filter(lang => resolveLocaleTranslation(complianceGroup, lang) !== undefined)]
     const localeContent: Record<string, LocaleContentInput> = {}
     for (const lang of otherLocales) {

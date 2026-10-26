@@ -1,4 +1,4 @@
-import type { CookiePurpose, CookieMap, CategoryMap, TemplateButtonMap } from '@consenti/types'
+import type { CookiePurpose, CookieMap, CategoryMap, TemplateButtonMap, DpdpaConfig } from '@consenti/types'
 
 export type BannerPosition = 'top' | 'bottom' | 'middle' | 'left-bottom' | 'right-bottom'
 export type ModalPosition = 'left' | 'right' | 'center'
@@ -444,7 +444,7 @@ export function composeProfileJson(
   expiryDays?: number,
   allowedOrigins?: string[],
   regulations?: string[],
-  dpdpa?: { dataFiduciary: string; grievanceEmail: string; purposeDescription?: string },
+  dpdpa?: DpdpaConfig,
 ): object {
   const translations: Record<string, unknown> = {}
   for (const [locale, content] of Object.entries(localeContents)) {
@@ -525,7 +525,7 @@ export function extractFromProfileJson(profileJson: unknown): {
   meta: { consentTemplateId?: string; uiTemplateId?: string }
   allowedOrigins: string[]
   regulations?: string[]
-  dpdpa?: { dataFiduciary: string; grievanceEmail: string; purposeDescription?: string }
+  dpdpa?: DpdpaConfig
 } | null {
   try {
     const pj = profileJson as Record<string, unknown>
@@ -631,7 +631,12 @@ export function extractFromProfileJson(profileJson: unknown): {
         dataFiduciary: rawDpdpa['dataFiduciary'],
         grievanceEmail: rawDpdpa['grievanceEmail'],
         ...(typeof rawDpdpa['purposeDescription'] === 'string' ? { purposeDescription: rawDpdpa['purposeDescription'] } : {}),
-      }
+        ...(typeof rawDpdpa['grievanceOfficer'] === 'string' ? { grievanceOfficer: rawDpdpa['grievanceOfficer'] } : {}),
+        ...(typeof rawDpdpa['grievanceUrl'] === 'string' ? { grievanceUrl: rawDpdpa['grievanceUrl'] } : {}),
+        ...(typeof rawDpdpa['noticeVersion'] === 'string' ? { noticeVersion: rawDpdpa['noticeVersion'] } : {}),
+        ...(rawDpdpa['noticeStatus'] === 'reviewed' || rawDpdpa['noticeStatus'] === 'draft' ? { noticeStatus: rawDpdpa['noticeStatus'] } : {}),
+        ...(typeof rawDpdpa['reopenControl'] === 'boolean' ? { reopenControl: rawDpdpa['reopenControl'] } : {}),
+      } satisfies DpdpaConfig
       : undefined
     return {
       cookies: rawCookies,

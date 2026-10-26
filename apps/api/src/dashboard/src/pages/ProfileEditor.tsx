@@ -675,6 +675,11 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
   const [dpdpaFiduciary, setDpdpaFiduciary] = useState('')
   const [dpdpaGrievanceEmail, setDpdpaGrievanceEmail] = useState('')
   const [dpdpaPurpose, setDpdpaPurpose] = useState('')
+  const [dpdpaOfficer, setDpdpaOfficer] = useState('')
+  const [dpdpaGrievanceUrl, setDpdpaGrievanceUrl] = useState('')
+  const [dpdpaNoticeVersion, setDpdpaNoticeVersion] = useState('')
+  const [dpdpaReviewed, setDpdpaReviewed] = useState(false)
+  const [dpdpaReopenControl, setDpdpaReopenControl] = useState(true)
   const [ageGateEnabled, setAgeGateEnabled] = useState(false)
   const [ageGateMinimumAge, setAgeGateMinimumAge] = useState(16)
   const [ageGateRequireParentalConsent, setAgeGateRequireParentalConsent] = useState(false)
@@ -757,6 +762,11 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
           setDpdpaFiduciary(pj.dpdpa['dataFiduciary'] ?? '')
           setDpdpaGrievanceEmail(pj.dpdpa['grievanceEmail'] ?? '')
           setDpdpaPurpose(pj.dpdpa['purposeDescription'] ?? '')
+          setDpdpaOfficer(pj.dpdpa['grievanceOfficer'] ?? '')
+          setDpdpaGrievanceUrl(pj.dpdpa['grievanceUrl'] ?? '')
+          setDpdpaNoticeVersion(pj.dpdpa['noticeVersion'] ?? '')
+          setDpdpaReviewed(pj.dpdpa['noticeStatus'] === 'reviewed')
+          setDpdpaReopenControl(pj.dpdpa['reopenControl'] !== false)
         }
         if (pj.ageGate?.enabled) {
           setAgeGateEnabled(true)
@@ -1142,7 +1152,16 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
       throw new Error('Consent Template and UI Template must be selected before saving')
     }
     const dpdpaConfig = (regulations.includes('dpdpa') || COMPLIANCE_GROUPS[complianceGroup as keyof typeof COMPLIANCE_GROUPS]?.requiresDpdpaDisclosure) && dpdpaFiduciary.trim() && dpdpaGrievanceEmail.trim()
-      ? { dataFiduciary: dpdpaFiduciary.trim(), grievanceEmail: dpdpaGrievanceEmail.trim(), ...(dpdpaPurpose.trim() ? { purposeDescription: dpdpaPurpose.trim() } : {}) }
+      ? {
+        dataFiduciary: dpdpaFiduciary.trim(),
+        grievanceEmail: dpdpaGrievanceEmail.trim(),
+        ...(dpdpaPurpose.trim() ? { purposeDescription: dpdpaPurpose.trim() } : {}),
+        ...(dpdpaOfficer.trim() ? { grievanceOfficer: dpdpaOfficer.trim() } : {}),
+        ...(dpdpaGrievanceUrl.trim() ? { grievanceUrl: dpdpaGrievanceUrl.trim() } : {}),
+        ...(dpdpaNoticeVersion.trim() ? { noticeVersion: dpdpaNoticeVersion.trim() } : {}),
+        noticeStatus: dpdpaReviewed ? 'reviewed' as const : 'draft' as const,
+        reopenControl: dpdpaReopenControl,
+      }
       : undefined
 
     // Default locale's resolved content goes directly on profileJson (stored on the DB row);
@@ -1721,6 +1740,47 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
                     placeholder={t('profileEditor.config.dpdpa.purposePlaceholder')}
                   />
                 </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label for="dpdpa-officer" class="block text-xs font-medium text-gray-700 mb-1">{t('profileEditor.config.dpdpa.officer')}</label>
+                    <input
+                      id="dpdpa-officer"
+                      class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                      value={dpdpaOfficer}
+                      onInput={e => setDpdpaOfficer((e.target as HTMLInputElement).value)}
+                    />
+                  </div>
+                  <div>
+                    <label for="dpdpa-url" class="block text-xs font-medium text-gray-700 mb-1">{t('profileEditor.config.dpdpa.url')}</label>
+                    <input
+                      id="dpdpa-url"
+                      type="url"
+                      class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                      value={dpdpaGrievanceUrl}
+                      onInput={e => setDpdpaGrievanceUrl((e.target as HTMLInputElement).value)}
+                      placeholder="https://"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label for="dpdpa-version" class="block text-xs font-medium text-gray-700 mb-1">{t('profileEditor.config.dpdpa.version')}</label>
+                  <input
+                    id="dpdpa-version"
+                    class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
+                    value={dpdpaNoticeVersion}
+                    onInput={e => setDpdpaNoticeVersion((e.target as HTMLInputElement).value)}
+                    placeholder="2026-10"
+                  />
+                </div>
+                <label class="flex items-start gap-2 text-xs text-gray-700">
+                  <input type="checkbox" class="mt-0.5" checked={dpdpaReopenControl} onChange={e => setDpdpaReopenControl((e.target as HTMLInputElement).checked)} />
+                  <span>{t('profileEditor.config.dpdpa.reopen')}</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs text-gray-700">
+                  <input type="checkbox" class="mt-0.5" checked={dpdpaReviewed} onChange={e => setDpdpaReviewed((e.target as HTMLInputElement).checked)} />
+                  <span>{t('profileEditor.config.dpdpa.reviewed')}</span>
+                </label>
+                {!dpdpaReviewed && <p class="text-xs text-amber-800">{t('profileEditor.config.dpdpa.draftHint')}</p>}
               </div>
             )}
 

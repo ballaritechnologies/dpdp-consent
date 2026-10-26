@@ -41,7 +41,7 @@ export default function UIThemesPage() {
   /* Colors */
   --consenti-color-bg: #ffffff;
   --consenti-color-text: #1a2e4a;
-  --consenti-color-text-muted: #949dab;
+  --consenti-color-text-muted: #5f6b7a;
   --consenti-color-primary: #04111f;
   --consenti-color-primary-text: #ffffff;
   --consenti-color-secondary: #f0f4f8;

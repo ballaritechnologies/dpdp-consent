@@ -27,3 +27,13 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-A5 | Trademark clearance for the new product name (shortlist: Haami, Sammati, Ijazat), and whether "built on Consenti" is fine as attribution wording. Preliminary screen and the exact searches to run are in `docs/naming.md`. | open |
 | Q-A6 | Terms and consent for scanning third-party sites in the hosted checker. | open |
 | Q-A7 | Which Indian languages are required, and which only recommended, for notices (Eighth Schedule)? | open |
+
+## DPDP consent flow (Phase 2)
+
+| ID | Question | Where | Status |
+|---|---|---|---|
+| Q-D1 | The built-in DPDP notice (banner and per-purpose texts) and the five default purposes (essential, enhanced features, preferences, analytics, advertising): is this structure and wording a reasonable starting template? What must a site add? | `packages/utils/src/profiles/opt-in-dpdpa/en.ts` | open |
+| Q-D2 | The Hindi, Kannada, Telugu and Tamil notice text and UI labels were written without native-speaker or legal review. Who should review them, and is a translation "equivalent" enough for a notice? | `packages/utils/src/profiles/opt-in-dpdpa/{hi,kn,te,ta}.ts`, `packages/utils/src/dpdp-labels.ts` | open |
+| Q-D3 | The "essential" purpose is always on and shown as not needing consent. Is that framing acceptable under DPDP (see also Q-A2 on s.7 legitimate uses)? | `opt-in-dpdpa/en.ts` (`necessary`) | open |
+| Q-D4 | Is a visible `DRAFT - REQUIRES LEGAL REVIEW` label on a live site the right safeguard, or should an unreviewed notice block activation instead? | `apps/ui/src/dpdp/notice.ts` | open |
+| Q-D5 | Does the notice need to name the Data Protection Board and how to complain to it, in addition to the grievance officer? | `packages/utils/src/dpdp-labels.ts` | open |

@@ -402,20 +402,19 @@ export const COMPLIANCE_VALIDATION_RULES: Record<string, {
         rule: 'legal-basis-required',
         field: 'legalBasis',
         check: (c) => !c['legalBasis'],
-        message: (id) => `Category "${id}" must have a legal basis set (Consent or Strictly Necessary) for DPDPA compliance.`,
+        message: (id) => `Category "${id}" must have a legal basis set (Consent or Strictly Necessary) for the DPDP flow.`,
       },
     ],
     categoryWarnings: [],
-    cookieErrors: [],
-    cookieWarnings: [
+    cookieErrors: [
       {
-        rule: 'pre-grant-opt-in-risk',
+        rule: 'no-pre-ticked-consent',
         field: 'preGrant',
         check: (c, legalBasis) => legalBasis === 'consent' && c['preGrant'] === true,
-        message: (id) => `Parameter "${id}" is pre-granted, which may violate DPDPA's opt-in requirement. Only use "Pre Grant" on custom profiles targeting jurisdictions where pre-granted consent is valid.`,
-        suggestion: 'Disable "Pre Grant" unless this profile specifically targets a jurisdiction that permits pre-granted consent.',
+        message: (id) => `Parameter "${id}" is pre-granted (pre-ticked). The DPDP flow asks for consent one purpose at a time with every optional purpose switched off, so "Pre Grant" is not allowed on a DPDP profile. The widget also ignores it for DPDP visitors.`,
       },
     ],
+    cookieWarnings: [],
   },
 
   'opt-in-china': {
@@ -678,7 +677,7 @@ export const EMBEDDED_COMPLIANCE_MAP: ComplianceMap = {
     PR: { name: 'Puerto Rico', type: 'country', complianceGroup: 'notice-only', default: 'notice-only', description: 'Puerto Rico', locales: ['es-PR', 'en'], compliance: [], timezones: ['America/Puerto_Rico'] },
     VC: { name: 'Saint Vincent and the Grenadines', type: 'country', complianceGroup: 'notice-only', default: 'notice-only', description: 'Saint Vincent and the Grenadines', locales: ['en'], compliance: [], timezones: ['America/St_Vincent'] },
     // ─── Asia — India ─────────────────────────────────────────────────────────
-    IN: { name: 'India', type: 'country', complianceGroup: 'opt-in-dpdpa', default: 'opt-in-dpdpa', description: 'India (DPDPA)', locales: ['hi-IN', 'en', 'bn-IN', 'ta-IN'], compliance: ['dpdpa'], timezones: ['Asia/Kolkata', 'Asia/Calcutta'] },
+    IN: { name: 'India', type: 'country', complianceGroup: 'opt-in-dpdpa', default: 'opt-in-dpdpa', description: 'India (DPDPA)', locales: ['hi-IN', 'en', 'kn-IN', 'te-IN', 'ta-IN', 'bn-IN'], compliance: ['dpdpa'], timezones: ['Asia/Kolkata', 'Asia/Calcutta'] },
     // ─── Asia — China ─────────────────────────────────────────────────────────
     CN: { name: 'China', type: 'country', complianceGroup: 'opt-in-china', default: 'opt-in-china', description: 'China (PIPL + DSL + CSL)', locales: ['zh-CN'], compliance: ['pipl', 'dsl-cn', 'csl-cn'], timezones: ['Asia/Shanghai'] },
     // ─── Asia — Southeast Asia ────────────────────────────────────────────────

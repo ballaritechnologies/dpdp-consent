@@ -33,6 +33,8 @@ import type {
   GpcMode,
   ConsentDbRecord,
   AgeGateConfig,
+  CookieMap,
+  DpdpaConfig,
   IdentifyEventDetail,
   VisitorIdentity,
 } from '../types'
@@ -70,6 +72,8 @@ import type { ButtonClickHandler } from '../ui/buttons'
 import { deepMerge } from '../utils/locale'
 import { logger, initConsole } from '../utils/console'
 import { findAcceptOnlyBanners } from './profile-warnings'
+import { buildDpdpNotice, dpdpLabelsFor } from '../dpdp/notice'
+import { DpdpReopenControl } from '../dpdp/reopen-control'
 
 export class ConsentiSetup implements ConsentiWidgetAPI {
   private initialized = false
@@ -94,6 +98,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
   private eventBus: EventBus | null = null
   private banner: Banner | null = null
   private modal: Modal | null = null
+  private dpdpReopen = new DpdpReopenControl()
   private ageGate: AgeGate | null = null
   private renderer: Renderer | null = null
   /** Set once the age gate (if enabled) resolves; threaded onto every `submitConsent` call thereafter. */
@@ -586,6 +591,33 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     this.initialized = true
     this.readyResolve()
     this.scannedScripts.push(...scanConsentScripts(this))
+    this.syncDpdpReopenControl()
+  }
+
+  private isDpdpProfile(): boolean {
+    return this.profile?.complianceGroup === 'opt-in-dpdpa'
+  }
+
+  /** The DPDP notice config for a DPDP profile — an empty one when the site hasn't configured
+   * `dpdpa`, so the draft label and withdrawal text still render. `undefined` for other groups. */
+  private dpdpNoticeConfig(): DpdpaConfig | undefined {
+    if (!this.isDpdpProfile()) return undefined
+    return this.profile?.dpdpa ?? { dataFiduciary: '', grievanceEmail: '' }
+  }
+
+  /** DPDP visitors who have decided get a persistent "Privacy choices" button (withdrawal as easy
+   * as consent); everyone else, and anyone still deciding, does not. */
+  private syncDpdpReopenControl(): void {
+    if (!isClient()) return
+    const cfg = this.dpdpNoticeConfig()
+    const wanted = !!cfg && cfg.reopenControl !== false && !!this.consentStore?.hasConsent()
+    if (!wanted || !this.renderer) {
+      this.dpdpReopen.unmount()
+      return
+    }
+    const labels = dpdpLabelsFor(this.config.core.locale ?? 'en', cfg)
+    const root = this.renderer.mount(this.config.rootEl)
+    this.dpdpReopen.mount(root, labels.reopenButton, labels.reopenAriaLabel, (trigger) => this.showModal(trigger))
   }
 
   /** Installs the inbound `consenti:listener:identify` window listener — the event-driven
@@ -646,11 +678,14 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     }
   }
 
-  /** Sets the `dir` attribute on the root element from `core.dir` (default `'auto'`, derived from `core.locale`). */
+  /** Sets `dir` (from `core.dir`, default `'auto'`, derived from `core.locale`) and `lang` on the
+   * root element, so screen readers pronounce Hindi, Tamil, etc. notice text in the right voice. */
   private applyDirection(): void {
     if (!this.renderer) return
     const root = this.renderer.mount(this.config.rootEl)
-    root.setAttribute('dir', resolveTextDirection(this.config.core.locale ?? 'en', this.config.core.dir))
+    const locale = this.config.core.locale ?? 'en'
+    root.setAttribute('dir', resolveTextDirection(locale, this.config.core.dir))
+    root.setAttribute('lang', locale)
   }
 
   /** Applies the `consenti-root--dark` class based on config or profile flag. */
@@ -979,6 +1014,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
         break
       case 'consentDeleted':
         this.consentStore?.clearInMemory()
+        this.syncDpdpReopenControl()
         break
     }
   }
@@ -1079,7 +1115,8 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
         // preGrant only ever loosens the default toward 'granted' — it never forces denial,
         // and only applies when there's no stored decision for this parameter yet.
         const defaultDenied = compGroup !== 'opt-out' && compGroup !== 'notice-only'
-        const fallback = cookie.preGrant ? 'granted' : (defaultDenied ? 'denied' : 'granted')
+        const preGranted = cookie.preGrant === true && compGroup !== 'opt-in-dpdpa'
+        const fallback = preGranted ? 'granted' : (defaultDenied ? 'denied' : 'granted')
         fullConsent[cookieId] = consent[cookieId] ?? fallback
       }
     }
@@ -1180,6 +1217,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     // calls also dismiss the banner/modal, not just button-triggered submissions.
     this.hideBanner()
     if (this.modal?.isOpen()) this.hideModal()
+    this.syncDpdpReopenControl()
 
     return apiResponse;
   }
@@ -1245,6 +1283,14 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
       variant,
     )
 
+    const dpdpCfg = this.dpdpNoticeConfig()
+    if (dpdpCfg) {
+      const notice = buildDpdpNotice({ variant: 'banner', locale: activeLocale, config: dpdpCfg, categories: this.profile.preferenceModal.categories })
+      const textContainer = bannerEl.querySelector('.consenti-banner__text-container')
+      if (textContainer) textContainer.appendChild(notice)
+      else bannerEl.insertBefore(notice, bannerEl.querySelector('.consenti-banner__buttons'))
+    }
+
     root.appendChild(bannerEl)
     const overlay = this.banner.getOverlay()
     if (overlay) root.appendChild(overlay)
@@ -1279,12 +1325,13 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
 
     const handlers = this.buildHandlers('modal')
     const existing = this.consentStore?.getConsent() ?? {}
-    const dpdpaCfg = this.profile.complianceGroup === 'opt-in-dpdpa' ? this.profile.dpdpa : undefined
+    const dpdpaCfg = this.dpdpNoticeConfig()
     const locales = this.profile.locales
     const activeLocale = this.config.core.locale ?? 'en'
     this.modal.build(
       this.profile.preferenceModal,
-      this.profile.cookies,
+      // DPDP: nothing is pre-ticked, whatever the profile says.
+      dpdpaCfg ? withoutPreGrant(this.profile.cookies) : this.profile.cookies,
       existing,
       handlers,
       this.profile.allowReceipt ?? false,
@@ -1385,6 +1432,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
 
     this.consentStore.delete()
     this.broadcastChannel.send({ type: 'consentDeleted' })
+    this.syncDpdpReopenControl()
   }
 
   /**
@@ -1499,6 +1547,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     // Only becomes persistent once a consent decision writes it into the `l` field of the
     // consent record itself (see submitConsent()).
     this.config.core.locale = locale
+    this.applyDirection()
     // Teardown current UI and re-init with new locale
     this.banner?.remove()
     if (this.modal?.isOpen()) this.modal.close()
@@ -1705,6 +1754,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     }
     for (const script of this.scannedScripts) script.destroy()
     this.scannedScripts = []
+    this.dpdpReopen.unmount()
     this.modal?.destroy()
     this.renderer?.unmount()
     this.broadcastChannel.disconnect()
@@ -1723,4 +1773,13 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     this.eventBus = null
     this.initialized = false
   }
+}
+
+function withoutPreGrant(cookies: CookieMap): CookieMap {
+  const out: CookieMap = {}
+  for (const [id, cookie] of Object.entries(cookies)) {
+    const { preGrant: _ignored, ...rest } = cookie
+    out[id] = rest
+  }
+  return out
 }

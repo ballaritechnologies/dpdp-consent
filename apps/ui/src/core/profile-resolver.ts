@@ -128,8 +128,14 @@ function isDomainAllowed(profile: PublicProfileResponse, trustDomain: boolean): 
 
 // ─── Pre-built profile loader ─────────────────────────────────────────────────
 
-async function loadPrebuiltProfile(complianceGroup: ComplianceGroupId, _locale?: string): Promise<ResolvedProfile | null> {
-  const { DEFAULT_PROFILES } = await import('@consenti/utils/profiles')
+async function loadPrebuiltProfile(complianceGroup: ComplianceGroupId, locale?: string): Promise<ResolvedProfile | null> {
+  const { DEFAULT_PROFILES, withLocaleOverlays } = await import('@consenti/utils/profiles')
+  // The DPDP flow must work in Indian languages even without a server, so its embedded profile
+  // carries every shipped locale (en, hi, kn, te, ta, ...) and honours the requested one.
+  if (complianceGroup === 'opt-in-dpdpa') {
+    const multilingual = withLocaleOverlays(complianceGroup)
+    return multilingual ? adaptEmbeddedProfile(multilingual, locale ?? 'en') : null
+  }
   const embedded = DEFAULT_PROFILES[complianceGroup as keyof typeof DEFAULT_PROFILES]
   if (!embedded) return null
   // Deliberately pinned to English — @consenti/utils/profiles now carries de/es/fr/ja overlays

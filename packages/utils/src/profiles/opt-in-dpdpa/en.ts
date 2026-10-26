@@ -1,6 +1,12 @@
 import type { EmbeddedProfile } from '../types.js'
 
-// India DPDPA: no legitimate_interest — all non-necessary cookies require consent.
+// DRAFT - REQUIRES LEGAL REVIEW. Built-in DPDP notice template: every site should have this text
+// reviewed by its own lawyer, then set `dpdpa.noticeStatus: 'reviewed'` to remove the visible
+// draft label. TODO(legal): required notice contents (docs/legal-open-questions.md, Q-A1).
+//
+// Each purpose is its own category so consent is asked for — and can be withdrawn — one purpose
+// at a time, never bundled. Nothing is pre-granted. Only `necessary` (legalBasis 'mandatory') is
+// always on; it is never bundled with an optional purpose.
 export const OPT_IN_DPDPA_EN_PROFILE: EmbeddedProfile = {
   complianceGroup: 'opt-in-dpdpa',
   gpcMode: 'ignore',
@@ -17,68 +23,61 @@ export const OPT_IN_DPDPA_EN_PROFILE: EmbeddedProfile = {
     en: {
       mainBanner: {
         position: 'bottom',
-        heading: 'Data Protection Notice',
+        heading: 'Your consent for how we use your personal data',
         htmlText:
-          "We are the Data Fiduciary under India's Digital Personal Data Protection Act (DPDPA). Your explicit consent is required before we process your personal data using non-essential cookies. You may withdraw consent at any time without affecting prior processing.",
+          'We would like to use your personal data for the purposes listed here. Each purpose is optional and separate: you can agree to some, all or none, and the site works either way. You can change or withdraw your consent at any time.',
+        showLocaleSwitcher: true,
         buttons: {
-          'consent-all': { text: 'I Consent', style: 'primary', action: 'custom', cookies: '*' },
-          'deny-all': {
-            text: 'I Do Not Consent',
-            style: 'secondary',
-            action: 'custom',
-            cookies: '!',
-          },
-          'review-choices': { text: 'Review Choices', style: 'text', action: 'manage' },
+          'consent-all': { text: 'Accept all', style: 'primary', action: 'custom', cookies: '*' },
+          'deny-all': { text: 'Reject all', style: 'primary', action: 'custom', cookies: '!' },
+          'review-choices': { text: 'Choose purposes', style: 'secondary', action: 'manage' },
         },
       },
       preferenceModal: {
         position: 'right',
-        heading: 'Consent Preferences',
+        heading: 'Choose what you consent to',
         subheading:
-          'Review the purposes for which we process your personal data and provide or withdraw consent for each.',
+          'Each purpose below is listed separately. Switch on only the ones you agree to. All optional purposes start switched off.',
         htmlText:
-          'Under the Digital Personal Data Protection Act (DPDPA) 2023, you have the right to give, manage, and withdraw consent for personal data processing. Legitimate interest is not a valid legal basis under the DPDPA — all data processing requires your explicit consent.',
+          'You can give, change or withdraw consent for each purpose at any time from the "Privacy choices" button. Withdrawing consent does not affect processing that already took place.',
         buttons: {
-          'consent-all': {
-            text: 'Give Consent to All',
-            style: 'primary',
-            action: 'custom',
-            cookies: '*',
-          },
-          'withdraw-all': {
-            text: 'Withdraw All Consent',
-            style: 'secondary',
-            action: 'custom',
-            cookies: '!',
-          },
-          'save-choices': { text: 'Save Choices', style: 'secondary', action: 'submit' },
+          'save-choices': { text: 'Save my choices', style: 'primary', action: 'submit' },
+          'consent-all': { text: 'Accept all', style: 'secondary', action: 'custom', cookies: '*' },
+          'withdraw-all': { text: 'Reject all', style: 'secondary', action: 'custom', cookies: '!' },
         },
         categories: {
           necessary: {
-            heading: 'Strictly Necessary',
+            heading: 'Essential: running the site',
             htmlText:
-              'Required to deliver the core service. No personal data is shared and consent is not required for these.',
+              'Data: session and security identifiers. Purpose: keeping you signed in, protecting against fraud, and remembering these consent choices. Always on, because the site cannot work without it.',
             legalBasis: 'mandatory',
             cookies: ['security_storage'],
           },
           functional: {
-            heading: 'Functional',
+            heading: 'Enhanced features',
             htmlText:
-              'Enable enhanced features and personalisation. Your explicit consent is required under the DPDPA before we process data for these purposes.',
+              'Data: feature settings and device information. Purpose: optional features such as embedded content and chat. Off unless you switch it on.',
             legalBasis: 'consent',
-            cookies: ['functionality_storage', 'personalization_storage'],
+            cookies: ['functionality_storage'],
+          },
+          preferences: {
+            heading: 'Remembering your preferences',
+            htmlText:
+              'Data: language, region and display choices. Purpose: personalising the site for you on later visits. Off unless you switch it on.',
+            legalBasis: 'consent',
+            cookies: ['personalization_storage'],
           },
           analytics: {
-            heading: 'Analytics',
+            heading: 'Measuring site use',
             htmlText:
-              'Help us understand how you interact with the site. Your consent is required before any analytics data is collected.',
+              'Data: pages visited, clicks, device and approximate location. Purpose: understanding how the site is used so we can improve it. Off unless you switch it on.',
             legalBasis: 'consent',
             cookies: ['analytics_storage'],
           },
           marketing: {
-            heading: 'Marketing & Advertising',
+            heading: 'Advertising',
             htmlText:
-              'Allow personalised advertising based on your browsing activity. Requires your explicit consent under the DPDPA.',
+              'Data: browsing activity and advertising identifiers. Purpose: showing ads based on your interests and measuring them. Off unless you switch it on.',
             legalBasis: 'consent',
             cookies: ['ad_storage'],
           },

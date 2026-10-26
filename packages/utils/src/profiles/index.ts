@@ -32,6 +32,10 @@ import { OPT_IN_DPDPA_DE } from './opt-in-dpdpa/de.js'
 import { OPT_IN_DPDPA_ES } from './opt-in-dpdpa/es.js'
 import { OPT_IN_DPDPA_FR } from './opt-in-dpdpa/fr.js'
 import { OPT_IN_DPDPA_JA } from './opt-in-dpdpa/ja.js'
+import { OPT_IN_DPDPA_HI } from './opt-in-dpdpa/hi.js'
+import { OPT_IN_DPDPA_KN } from './opt-in-dpdpa/kn.js'
+import { OPT_IN_DPDPA_TE } from './opt-in-dpdpa/te.js'
+import { OPT_IN_DPDPA_TA } from './opt-in-dpdpa/ta.js'
 import { OPT_IN_CHINA_DE } from './opt-in-china/de.js'
 import { OPT_IN_CHINA_ES } from './opt-in-china/es.js'
 import { OPT_IN_CHINA_FR } from './opt-in-china/fr.js'
@@ -102,6 +106,12 @@ const PROFILE_LOCALES: Record<ComplianceGroupId, LocaleOverlayMap> = {
     es: OPT_IN_DPDPA_ES,
     fr: OPT_IN_DPDPA_FR,
     ja: OPT_IN_DPDPA_JA,
+    // DPDP notice languages (DRAFT - REQUIRES LEGAL REVIEW). Adding one is data only: a new
+    // overlay file plus its line here.
+    hi: OPT_IN_DPDPA_HI,
+    kn: OPT_IN_DPDPA_KN,
+    te: OPT_IN_DPDPA_TE,
+    ta: OPT_IN_DPDPA_TA,
   },
   'opt-in-china': {
     de: OPT_IN_CHINA_DE,
@@ -289,4 +299,23 @@ export function resolveLocaleTranslation(
       categories,
     },
   }
+}
+
+/** Every locale the built-in profile for `complianceGroup` ships text for, English first. */
+export function profileLocales(complianceGroup: string): string[] {
+  const overlays = PROFILE_LOCALES[complianceGroup as ComplianceGroupId]
+  return DEFAULT_PROFILES[complianceGroup as ComplianceGroupId] ? ['en', ...Object.keys(overlays ?? {})] : []
+}
+
+/** The built-in profile with every locale overlay merged into `translations`, so a consumer can
+ * switch language without a server. `undefined` for an unknown group. */
+export function withLocaleOverlays(complianceGroup: string): EmbeddedProfile | undefined {
+  const embedded = DEFAULT_PROFILES[complianceGroup as ComplianceGroupId]
+  if (!embedded) return undefined
+  const translations: Record<string, EmbeddedTranslations> = {}
+  for (const locale of profileLocales(complianceGroup)) {
+    const tx = resolveLocaleTranslation(complianceGroup, locale)
+    if (tx) translations[locale] = tx
+  }
+  return { ...embedded, translations }
 }

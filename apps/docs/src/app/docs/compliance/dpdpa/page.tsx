@@ -179,21 +179,14 @@ export default function DPDPAPage() {
       <h3>Profile configuration (dashboard)</h3>
       <p>
         In the <strong>Profile Editor</strong>, select <strong>DPDPA (India 2023)</strong> as the
-        regulation. Three fields appear:
+        regulation. The <strong>DPDP notice details</strong> section appears:
       </p>
       <ul>
-        <li>
-          <strong>Data Fiduciary Name</strong> — your company or product name (appears in the modal
-          notice)
-        </li>
-        <li>
-          <strong>Grievance Officer Email</strong> — contact address for data complaints (required
-          by law)
-        </li>
-        <li>
-          <strong>Purpose Description</strong> *(optional)* — plain-language description of why you
-          collect data
-        </li>
+        <li><strong>Data Fiduciary Name</strong> (required): your company or product name.</li>
+        <li><strong>Grievance Officer Email</strong> (required): where visitors send questions and complaints.</li>
+        <li><strong>Purpose Description</strong>, <strong>Grievance officer</strong> name, <strong>Grievance / contact page</strong> (https) and <strong>Notice version</strong> (all optional).</li>
+        <li><strong>Persistent &quot;Privacy choices&quot; button</strong> (on by default).</li>
+        <li><strong>Notice reviewed by our lawyer</strong>: until ticked, a visible <code>DRAFT - REQUIRES LEGAL REVIEW</code> label is shown.</li>
       </ul>
 
       <h3>Programmatic profile JSON</h3>
@@ -202,49 +195,81 @@ export default function DPDPAPage() {
         code={`{
   "regulation": "dpdpa",
   "dpdpa": {
-    "dataFiduciary": "Acme Corp",
-    "grievanceEmail": "privacy@acme.com",
-    "purposeDescription": "To operate the website and send transactional emails."
+    "dataFiduciary": "Acme Corp Pvt Ltd",
+    "grievanceEmail": "grievance@acme.example",
+    "grievanceOfficer": "R. Sharma",
+    "grievanceUrl": "https://acme.example/grievance",
+    "purposeDescription": "To operate the website and send transactional emails.",
+    "noticeVersion": "2026-10",
+    "noticeStatus": "draft",
+    "reopenControl": true,
+    "labels": { "mr": { "reopenButton": "गोपनीयता पर्याय" } }
   }
 }`}
       />
-
-      <h2>Consent notice (modal footer)</h2>
       <p>
-        When <code>regulation: 'dpdpa'</code> is active and the profile includes a{' '}
-        <code>dpdpa</code> block, Consenti automatically injects a notice before the modal action
-        buttons:
+        Without a server, pass the same block as <code>profileOverride: {'{ dpdpa: { ... } }'}</code>{' '}
+        in the widget config.
       </p>
-      <CodeBlock
-        lang="html"
-        code={`<div class="consenti-modal__dpdpa-notice">
-  <strong>Data Fiduciary:</strong> Acme Corp.
-  <strong>Purpose:</strong> To operate the website and send transactional emails.
-  You may withdraw consent at any time or contact our Grievance Officer at
-  <a href="mailto:privacy@acme.com">privacy@acme.com</a>.
-</div>`}
-      />
-      <p>No custom template changes are required — the notice is rendered automatically.</p>
+
+      <h2>The DPDP flow</h2>
+      <p>For <code>opt-in-dpdpa</code> profiles the widget renders:</p>
+      <ul>
+        <li>
+          <strong>An itemised notice.</strong> The banner lists every purpose separately (Essential,
+          Enhanced features, Preferences, Analytics, Advertising); the preferences panel describes
+          each one: what data, for what purpose.
+        </li>
+        <li>
+          <strong>Granular, unbundled consent.</strong> One switch per purpose; only the essential
+          purpose is always on. Optional purposes start switched off. The widget ignores{' '}
+          <code>preGrant</code> for DPDP visitors, and the profile validator reports it as an error.
+        </li>
+        <li><strong>Reject as prominent as accept</strong> on the banner.</li>
+        <li>
+          <strong>Data Fiduciary and grievance contact</strong> on both the banner and the
+          preferences panel.
+        </li>
+        <li>
+          <strong>Withdrawal as easy as consent:</strong> after a decision, a persistent
+          &quot;Privacy choices&quot; button (bottom corner, keyboard accessible) reopens the panel,
+          where &quot;Reject all&quot; withdraws everything in one action.
+        </li>
+        <li>
+          <strong>Languages:</strong> English, Hindi (<code>hi</code>), Kannada (<code>kn</code>),
+          Telugu (<code>te</code>) and Tamil (<code>ta</code>) ship built in, with the locale
+          switcher on the banner. The widget sets <code>lang</code> on its root so screen readers
+          use the right voice.
+        </li>
+        <li>
+          <strong>A visible <code>DRAFT - REQUIRES LEGAL REVIEW</code> label</strong> until{' '}
+          <code>noticeStatus</code> is <code>&quot;reviewed&quot;</code>. The built-in notice
+          text is a starting point, not reviewed legal wording.
+        </li>
+      </ul>
+
+      <h3>Adding a language</h3>
+      <p>Adding a language never needs a code change:</p>
+      <ul>
+        <li>
+          <strong>Per site:</strong> add the locale&apos;s notice text in the Profile Editor (or{' '}
+          <code>localeContent</code> via the API), and its short UI labels under{' '}
+          <code>dpdpa.labels[locale]</code>.
+        </li>
+        <li>
+          <strong>Built in:</strong> add an overlay file under{' '}
+          <code>packages/utils/src/profiles/opt-in-dpdpa/</code>, register it in{' '}
+          <code>PROFILE_LOCALES</code>, and add its labels to <code>DPDP_LABELS</code> in{' '}
+          <code>packages/utils/src/dpdp-labels.ts</code>.
+        </li>
+      </ul>
 
       <h2>GPC under DPDPA</h2>
       <Callout type="warning">
-        DPDPA does not recognise GPC as a valid opt-out signal. Even if the visitor's browser sends
-        <code>navigator.globalPrivacyControl === true</code>, Consenti will not automatically deny
-        cookies under DPDPA. The banner is always shown on first visit for an explicit opt-in.
+        DPDPA does not recognise GPC as an opt-out signal. Even if the visitor's browser sends
+        <code>navigator.globalPrivacyControl === true</code>, the widget does not automatically deny
+        cookies under DPDPA. The banner is always shown on first visit for an explicit choice.
       </Callout>
-
-      <h2>Right to withdrawal (Section 6)</h2>
-      <p>
-        DPDPA Section 6 requires that withdrawal of consent is as easy as giving consent. Use{' '}
-        <code>widget.showModal()</code> from a persistent footer link to give users a way to update
-        their choices at any time:
-      </p>
-      <CodeBlock
-        lang="html"
-        code={`<a href="#" onclick="window.__consenti?.showModal(); return false;">
-  Manage my consent
-</a>`}
-      />
 
       <h2>Erasure (Section 12)</h2>
       <p>

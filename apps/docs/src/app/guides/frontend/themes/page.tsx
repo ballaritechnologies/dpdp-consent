@@ -169,7 +169,7 @@ widget.setDarkMode(false)   // force light`}
             {[
               ['--consenti-color-bg', '#ffffff', 'Banner & modal background'],
               ['--consenti-color-text', '#1a2e4a', 'Main text colour'],
-              ['--consenti-color-text-muted', '#949dab', 'Secondary/muted text'],
+              ['--consenti-color-text-muted', '#5f6b7a', 'Secondary/muted text'],
               ['--consenti-color-primary', '#04111f', 'Primary button background & accents'],
               ['--consenti-color-primary-text', '#ffffff', 'Primary button text'],
               ['--consenti-color-secondary', '#f0f4f8', 'Secondary button/surface background'],

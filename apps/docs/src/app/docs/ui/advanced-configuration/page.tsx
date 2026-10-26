@@ -1051,7 +1051,7 @@ buildSyncGpcSnippet({ dataLayerName: 'myDataLayer' }) // custom dataLayer name`}
               <code className="whitespace-nowrap">--consenti-color-text-muted</code>
             </td>
             <td>
-              <code className="whitespace-nowrap">#949dab</code>
+              <code className="whitespace-nowrap">#5f6b7a</code>
             </td>
             <td>Secondary/de-emphasised text colour (footer metadata, helper text).</td>
           </tr>

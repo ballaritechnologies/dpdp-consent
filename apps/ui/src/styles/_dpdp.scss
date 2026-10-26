@@ -1,0 +1,82 @@
+// ─── DPDP notice block (banner + modal) and persistent "Privacy choices" button ─
+
+.consenti-dpdp {
+    font-size: 13px;
+    line-height: var(--consenti-line-height);
+    margin-top: var(--consenti-spacing-sm);
+}
+
+.consenti-dpdp--modal {
+    padding: var(--consenti-spacing-sm) var(--consenti-spacing-lg);
+    border-top: 1px solid var(--consenti-color-border);
+}
+
+.consenti-dpdp p {
+    margin: 0 0 var(--consenti-spacing-xs);
+}
+
+// Contrast 7.9:1 (#5c3a00 on #fff4d6) — readable for everyone, and impossible to mistake for copy.
+.consenti-dpdp__draft {
+    display: inline-block;
+    padding: 2px var(--consenti-spacing-sm);
+    border: 1px solid #b26a00;
+    border-radius: 4px;
+    background: #fff4d6;
+    color: #5c3a00;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+}
+
+.consenti-dpdp__purposes {
+    margin: 0 0 var(--consenti-spacing-xs);
+    padding-inline-start: 1.25em;
+}
+
+.consenti-dpdp__purpose-note {
+    color: var(--consenti-color-text-muted);
+}
+
+.consenti-dpdp a {
+    color: var(--consenti-color-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.consenti-dpdp a:focus-visible,
+.consenti-dpdp-reopen:focus-visible {
+    outline: 2px solid var(--consenti-color-primary);
+    outline-offset: 2px;
+}
+
+.consenti-dpdp__version {
+    color: var(--consenti-color-text-muted);
+    font-size: 12px;
+}
+
+.consenti-dpdp-reopen {
+    position: fixed;
+    bottom: var(--consenti-spacing-md);
+    inset-inline-start: var(--consenti-spacing-md);
+    z-index: calc(var(--consenti-z-banner) - 2);
+    min-height: 44px;
+    padding: var(--consenti-spacing-sm) var(--consenti-spacing-md);
+    border: 1px solid var(--consenti-color-border);
+    border-radius: 999px;
+    background: var(--consenti-color-bg);
+    color: var(--consenti-color-text);
+    box-shadow: var(--consenti-shadow);
+    font-family: var(--consenti-font-family);
+    font-size: var(--consenti-font-size-base);
+    cursor: pointer;
+}
+
+.consenti-dpdp-reopen:hover {
+    border-color: var(--consenti-color-primary);
+}
+
+@media print {
+    .consenti-dpdp-reopen {
+        display: none;
+    }
+}

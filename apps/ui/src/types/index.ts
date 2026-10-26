@@ -35,6 +35,8 @@ export type {
   ResolvedProfile,
   AgeGateConfig,
   AgeGateModalContent,
+  DpdpaConfig,
+  DpdpLabels,
   GtmConfig,
   UtilsConfig,
   ApiConfig,

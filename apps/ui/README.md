@@ -150,7 +150,7 @@ const widget = new ConsentiSetup({
     theme: {
       colorBg: '#ffffff',
       colorText: '#1a1a1a',
-      colorTextMuted: '#949dab',
+      colorTextMuted: '#5f6b7a',
       colorPrimary: '#1565c0',
       colorPrimaryText: '#ffffff',
       colorSecondary: '#f0f4f8',
@@ -357,6 +357,35 @@ new ConsentiSetup({
 ```
 
 ---
+
+## DPDP flow (India)
+
+With `compliance.type: 'opt-in-dpdpa'` (or a site [regime](../api/README.md#consent-regimes) that routes the visitor there), the widget renders:
+
+- an **itemised notice**: the banner lists each purpose separately, and the preferences panel has one switch per purpose with what data is used and why;
+- **no pre-ticked purposes**: optional purposes start off; `preGrant` is ignored for DPDP visitors;
+- the **Data Fiduciary and grievance contact** on the banner and panel (`dpdpa.dataFiduciary`, `grievanceEmail`, optional `grievanceOfficer`, `grievanceUrl`);
+- a persistent **"Privacy choices"** button after a decision, so withdrawal is as easy as consent (`dpdpa.reopenControl: false` turns it off);
+- **English, Hindi, Kannada, Telugu and Tamil** text, switchable from the banner, even without a server; the root gets `lang` for screen readers;
+- a visible **`DRAFT - REQUIRES LEGAL REVIEW`** label until `dpdpa.noticeStatus: 'reviewed'`.
+
+```js
+new ConsentiSetup({
+  compliance: { type: 'opt-in-dpdpa' },
+  core: { locale: 'hi' },
+  profileOverride: {
+    dpdpa: {
+      dataFiduciary: 'Acme Pvt Ltd',
+      grievanceEmail: 'grievance@acme.example',
+      grievanceUrl: 'https://acme.example/grievance',
+      noticeStatus: 'draft',           // 'reviewed' once your lawyer has approved the text
+      labels: { mr: { reopenButton: 'गोपनीयता पर्याय' } }, // add a language as data
+    },
+  },
+})
+```
+
+The built-in notice text is a starting point, not reviewed legal wording. Nothing here is legal advice.
 
 ## Profile Resolution Scenarios
 
@@ -1084,7 +1113,7 @@ Override any token in your own stylesheet:
   /* Colors */
   --consenti-color-bg: #ffffff;
   --consenti-color-text: #1a2e4a;
-  --consenti-color-text-muted: #949dab;
+  --consenti-color-text-muted: #5f6b7a;
   --consenti-color-primary: #04111f;
   --consenti-color-primary-text: #ffffff;
   --consenti-color-secondary: #f0f4f8;

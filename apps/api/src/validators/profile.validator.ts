@@ -1,5 +1,6 @@
 import type { CreateProfileInput, UpdateProfileInput } from '@consenti/types'
 import { findUnsafePathSegment } from '../utils/path-segment'
+import { findDpdpaProblem } from './dpdpa.validator'
 
 export interface ValidationResult {
   valid: boolean
@@ -34,6 +35,8 @@ export function validateCreateProfile(body: unknown): ValidationResult {
   }
   const unsafe = pathSegmentProblem(b)
   if (unsafe) return { valid: false, error: unsafe }
+  const dpdpa = findDpdpaProblem(pj['dpdpa'])
+  if (dpdpa) return { valid: false, error: dpdpa }
   return { valid: true }
 }
 
@@ -41,6 +44,9 @@ export function validateUpdateProfile(body: unknown): ValidationResult {
   if (!body || typeof body !== 'object') return { valid: false, error: 'Request body must be a JSON object' }
   const unsafe = pathSegmentProblem(body as Record<string, unknown>)
   if (unsafe) return { valid: false, error: unsafe }
+  const pj = (body as Record<string, unknown>)['profileJson']
+  const dpdpa = findDpdpaProblem(pj && typeof pj === 'object' ? (pj as Record<string, unknown>)['dpdpa'] : undefined)
+  if (dpdpa) return { valid: false, error: dpdpa }
   return { valid: true }
 }
 

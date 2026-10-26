@@ -22,7 +22,8 @@
  * See `ConsentiSetup.forgetMe()`.
  */
 
-import type { PreferenceModal, Category, CategoryMap, CookieMap, ConsentValue, ConsentStatus, Button } from '../types'
+import type { PreferenceModal, Category, CategoryMap, CookieMap, ConsentValue, ConsentStatus, Button, DpdpaConfig } from '../types'
+import { buildDpdpNotice } from '../dpdp/notice'
 import type { ButtonClickHandler } from './buttons'
 import { buildButton } from './buttons'
 import { createOverlay } from './overlay'
@@ -59,7 +60,7 @@ export class Modal {
    * @param initialConsent - Current stored consent, used to pre-set toggle states.
    * @param handlers       - Click handlers wired to each button.
    * @param allowReceipt   - When `true`, renders the consent receipt download checkbox.
-   * @param dpdpaConfig    - DPDPA grievance notice config.
+   * @param dpdpaConfig    - DPDP notice config; when set, the DPDP notice block is rendered (see `dpdp/notice.ts`).
    * @param locales        - All available locale codes (for locale switcher).
    * @param activeLocale   - The currently active locale code.
    * @param onLocaleSwitch - Callback invoked when the user selects a different locale.
@@ -70,7 +71,7 @@ export class Modal {
     initialConsent: ConsentValue,
     handlers: ButtonClickHandler,
     allowReceipt: boolean,
-    dpdpaConfig?: { dataFiduciary: string; grievanceEmail: string; purposeDescription?: string },
+    dpdpaConfig?: DpdpaConfig,
     locales?: string[],
     activeLocale?: string,
     onLocaleSwitch?: (locale: string) => void,
@@ -195,18 +196,7 @@ export class Modal {
     }
 
     if (dpdpaConfig) {
-      const notice = document.createElement('div')
-      notice.className = 'consenti-modal__dpdpa-notice'
-      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;')
-      const safeEmail = dpdpaConfig.grievanceEmail.includes('@') && !dpdpaConfig.grievanceEmail.toLowerCase().startsWith('javascript:')
-        ? dpdpaConfig.grievanceEmail : ''
-      notice.innerHTML = [
-        `<strong>Data Fiduciary:</strong> ${esc(dpdpaConfig.dataFiduciary)}.`,
-        dpdpaConfig.purposeDescription ? ` <strong>Purpose:</strong> ${esc(dpdpaConfig.purposeDescription)}.` : '',
-        ` You may withdraw consent at any time or contact our Grievance Officer at`,
-        safeEmail ? ` <a href="mailto:${esc(safeEmail)}">${esc(safeEmail)}</a>.` : '.',
-      ].join('')
-      container.appendChild(notice)
+      container.appendChild(buildDpdpNotice({ variant: 'modal', locale: activeLocale ?? 'en', config: dpdpaConfig }))
     }
 
     const btns = document.createElement('div')

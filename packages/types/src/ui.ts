@@ -247,6 +247,40 @@ export interface DpdpaConfig {
   dataFiduciary: string
   grievanceEmail: string
   purposeDescription?: string
+  /** Optional named contact shown next to the grievance email. */
+  grievanceOfficer?: string
+  /** Optional https link to a grievance / contact page. */
+  grievanceUrl?: string
+  /**
+   * `'draft'` (the default, and what the built-in notice templates ship as) renders a visible
+   * `DRAFT - REQUIRES LEGAL REVIEW` label on the banner and modal. Set `'reviewed'` only after
+   * the notice text has been reviewed by a lawyer.
+   */
+  noticeStatus?: 'draft' | 'reviewed'
+  /** Free-form notice version, shown in the modal and recorded with consent. */
+  noticeVersion?: string
+  /** Persistent "Privacy choices" button after a decision, so withdrawal is as easy as consent.
+   * Default: true. Set false only if the site renders its own always-visible control. */
+  reopenControl?: boolean
+  /** Per-locale overrides of the widget's DPDP UI labels (see `DpdpLabels`). Keyed by locale. */
+  labels?: Record<string, Partial<DpdpLabels>>
+}
+
+/** Short UI labels the widget renders around a DPDP notice. Built-in text exists for English,
+ * Hindi, Kannada, Telugu and Tamil (`DPDP_LABELS` in @consenti/utils); any locale can be added or
+ * overridden as data via `DpdpaConfig.labels`. */
+export interface DpdpLabels {
+  /** Visible draft label. The built-in value is `DRAFT - REQUIRES LEGAL REVIEW` in every locale. */
+  draftBadge: string
+  dataFiduciary: string
+  purposes: string
+  purposeAlwaysOn: string
+  grievance: string
+  grievanceLink: string
+  withdraw: string
+  noticeVersion: string
+  reopenButton: string
+  reopenAriaLabel: string
 }
 
 /**

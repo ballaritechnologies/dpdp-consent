@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [master, next]
+  pull_request:
+    branches: [master, next]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # 22+: the API test suite uses Node's built-in node:sqlite (Node 22.5+); the docs say Node 22+.
+          node-version: '22'
+          cache: 'npm'
+
+      # The committed lockfile must install on every OS/CPU (it used to be deleted here because it only
+      # recorded macOS native packages). Resolving from scratch (`rm -f package-lock.json && npm install`)
+      # now crashes npm on Linux with "Cannot read properties of null (reading 'edgesOut')", so install
+      # exactly what is locked instead.
+      - name: Check lockfile installs on Windows, Linux and macOS
+        run: npm run check:lockfile
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright Chromium (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright OS dependencies (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Type check
+        run: npx turbo typecheck
+
+      - name: Lint
+        run: npx turbo lint
+
+      - name: Build
+        run: npx turbo build
+
+      - name: Test
+        run: npx turbo test
+
+      - name: Widget functional checks (apps/test-runner)
+        run: node dist/cli.js --scope functional
+        working-directory: apps/test-runner
+
+      - name: Widget visual regression matrix (apps/test-runner)
+        run: node dist/cli.js --scope visual
+        working-directory: apps/test-runner
+        continue-on-error: true
+
+      - name: Widget accessibility (axe-core, apps/test-runner)
+        run: node dist/a11y-cli.js
+        working-directory: apps/test-runner
+
+      - name: Audit (fail on high/critical)
+        run: npm audit --audit-level=high --workspaces

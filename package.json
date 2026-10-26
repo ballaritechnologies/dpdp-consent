@@ -1,0 +1,49 @@
+{
+  "name": "consenti-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:ui": "npm run dev --workspace=apps/ui",
+    "dev:api": "npm run dev:all --workspace=apps/api",
+    "dev": "npm run dev:ui && npm run dev:api",
+    "watch:types": "npm run watch --workspace=packages/types",
+    "watch:utils": "npm run watch --workspace=packages/utils",
+    "watch:ui": "npm run watch --workspace=apps/ui",
+    "watch:api": "npm run watch:all --workspace=apps/api",
+    "watch": "npm run watch:types && npm run watch:utils && npm run watch:ui && npm run watch:api",
+    "dev:docs": "npm run watch --workspace=apps/ui && npm run watch --workspace=apps/ui && npm run dev --workspace=apps/docs",
+    "dev:docs:clean": "npm run build && npm run dev --workspace=apps/docs",
+    "build:ui": "turbo build --filter=@consenti/ui...",
+    "build:api": "turbo build --filter=@consenti/api...",
+    "build": "turbo build --filter=@consenti/ui... --filter=@consenti/api...",
+    "build:docs": "npm run build && npm run build --workspace=apps/docs",
+    "docs:demo": "bash scripts/docs-demo.sh",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "check:lockfile": "node scripts/check-lockfile.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version && node scripts/sync-root-version.mjs",
+    "publish-packages": "npx turbo build --filter=@consenti/ui --filter=@consenti/api && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.1",
+    "@types/node": "^26.1.2",
+    "npm-run-all": "^4.1.5",
+    "tsx": "^4.23.0",
+    "turbo": "^2.10.7",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.26"
+  },
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "version": "0.6.0"
+}

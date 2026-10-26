@@ -1,0 +1,75 @@
+.consenti-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--consenti-spacing-sm) var(--consenti-spacing-md);
+  border: none;
+  border-radius: var(--consenti-border-radius-btn);
+  font-family: var(--consenti-font-family);
+  font-size: var(--consenti-font-size-base);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+
+  &:focus-visible {
+    outline: 2px solid var(--consenti-color-primary);
+    outline-offset: 2px;
+  }
+
+  &:hover {
+    opacity: 0.9;
+  }
+
+
+  &--primary {
+    background: var(--consenti-color-primary);
+    color: var(--consenti-color-primary-text);
+    border: 1px solid var(--consenti-color-primary);
+  }
+
+  &--secondary {
+    background: var(--consenti-color-secondary);
+    color: var(--consenti-color-primary);
+    border: 1px solid var(--consenti-color-primary);
+
+    &:hover {
+      background: var(--consenti-color-primary);
+      color: var(--consenti-color-secondary);
+      // border: 1px solid var(--consenti-color-secondary);
+    }
+  }
+
+  &--text {
+    background: transparent;
+    color: var(--consenti-color-primary);
+    padding-left: 0;
+    padding-right: 0;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    border: 1px solid transparent;
+  }
+
+  &--accent {
+    background: var(--consenti-color-accent);
+    color: var(--consenti-color-accent-text);
+  }
+
+  &--action {
+    background: transparent;
+    color: var(--consenti-color-text);
+    font-size: 20px;
+    line-height: 1;
+    border-radius: 50%;
+    height: 24px;
+    width: 24px;
+    font-size: 24px;
+    padding: 0;
+
+    // &:hover {
+    //   background: var(--consenti-color-secondary);
+    //   opacity: 1;
+    // }
+  }
+}

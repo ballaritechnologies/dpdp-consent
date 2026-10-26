@@ -1,0 +1,72 @@
+# ─── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Build outputs ────────────────────────────────────────────────────────────
+dist/
+.turbo/
+*.tsbuildinfo
+.next
+*.db
+*.db-shm
+*.db-wal
+*-deploy.tar.gz
+*.zip
+
+
+# ─── Environment / secrets ───────────────────────────────────────────────────
+plans
+.env
+.env.local
+.env.*.local
+consenti-data.json
+consenti-data.db
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+gityarn-error.log*
+db
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# ─── Editors ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ─── Testing ─────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# apps/test-runner: baseline/ is checked in and reviewed like code;
+# results/<ISO_DATE>/ (screenshots, diffs, report.json/html) is regenerated per run.
+apps/test-runner/results/
+apps/scanner/scan-results/
+
+# ─── AI agent session files ───────────────────────────────────────────────────
+# Claude Code (Anthropic) & Cursor
+.claude/
+.cursor/
+.rules
+
+# Aider
+.aider*
+.aider.tags.cache.v*/
+
+# GitHub Copilot
+.copilot/
+
+# Codeium / Windsurf
+.codeium/
+
+# Devin
+.devin/

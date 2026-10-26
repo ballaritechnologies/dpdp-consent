@@ -1,0 +1,98 @@
+// Allowlist entries are authored as full origins (the dashboard's own placeholder/hint is
+// "https://example.com") — bare hostnames are also accepted for anyone who typed one directly.
+function patternHostname(pattern: string): string {
+  if (!pattern.includes('://')) return pattern
+  try {
+    return new URL(pattern).hostname
+  } catch {
+    return pattern
+  }
+}
+
+function matchesAllowedOrigin(origin: string, allowedOrigins: string[]): boolean {
+  let hostname: string
+  try {
+    hostname = new URL(origin).hostname
+  } catch {
+    return false
+  }
+  return allowedOrigins.some(pattern => {
+    if (pattern.startsWith('*.')) {
+      const suffix = pattern.slice(1) // '.example.com'
+      return hostname === pattern.slice(2) || hostname.endsWith(suffix)
+    }
+    return hostname === patternHostname(pattern)
+  })
+}
+
+export function buildCorsHeaders(origin: string | null, allowedOrigins?: string[]): Record<string, string> {
+  let allowOrigin = origin ?? '*'
+  if (allowedOrigins && allowedOrigins.length > 0 && origin) {
+    allowOrigin = matchesAllowedOrigin(origin, allowedOrigins) ? origin : 'null'
+  }
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+    // Required for the browser to send/accept the visitor-ownership cookie on cross-origin
+    // consent requests (the widget's page origin is almost never the API's own origin). Has
+    // no effect when Allow-Origin ends up '*' (no Origin header on the request) — browsers
+    // reject credentialed responses with a wildcard origin regardless of this header.
+    'Access-Control-Allow-Credentials': 'true',
+  }
+}
+
+export function handleCors(request: Request): Response | null {
+  if (request.method === 'OPTIONS') {
+    const origin = request.headers.get('origin')
+    return new Response(null, {
+      status: 204,
+      headers: buildCorsHeaders(origin),
+    })
+  }
+  return null
+}
+
+export function withCors(response: Response, request: Request): Response {
+  const origin = request.headers.get('origin')
+  const cors = buildCorsHeaders(origin)
+  const newHeaders = new Headers(response.headers)
+  for (const [k, v] of Object.entries(cors)) newHeaders.set(k, v)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  })
+}
+
+export function checkOriginAllowed(request: Request, allowedOrigins: string[]): boolean {
+  if (allowedOrigins.length === 0) return true
+  const origin = request.headers.get('origin')
+  if (!origin) return true // non-browser / server-side calls always allowed
+  return matchesAllowedOrigin(origin, allowedOrigins)
+}
+
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://unpkg.com",
+  "style-src 'self' https://unpkg.com 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ')
+
+export function addSecurityHeaders(res: Response): Response {
+  const h = new Headers(res.headers)
+  h.set('X-Content-Type-Options', 'nosniff')
+  h.set('X-Frame-Options', 'DENY')
+  h.set('Referrer-Policy', 'no-referrer')
+  h.set('Permissions-Policy', 'interest-cohort=()')
+  h.set('Content-Security-Policy', CSP)
+  // Browsers only honour HSTS over HTTPS; sending it over HTTP is harmless.
+  h.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload')
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h })
+}

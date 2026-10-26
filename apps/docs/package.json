@@ -1,0 +1,40 @@
+{
+  "name": "@consenti/docs",
+  "private": true,
+  "version": "0.3.0",
+  "scripts": {
+    "dev": "next dev --port 3000 --webpack",
+    "build": "next build --webpack",
+    "start": "UV_THREADPOOL_SIZE=1 node --max-old-space-size=256 .next/standalone/apps/docs/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@consenti/api": "*",
+    "@consenti/ui": "*",
+    "@consenti/utils": "*",
+    "@docsearch/react": "^4.7.0",
+    "@tailwindcss/typography": "^0.5.20",
+    "lucide-react": "^1.28.0",
+    "next": "^16.2.12",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-icons": "^5.7.0",
+    "react-markdown": "^10.1.0",
+    "shiki": "^4.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3"
+  },
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

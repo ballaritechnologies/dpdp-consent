@@ -1,0 +1,1192 @@
+import type { Pool, PoolClient, QueryResult } from 'pg'
+import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
+import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_POSTGRES, SCHEMA_VERSION, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
+import { likePrefix } from '../../utils/sql-search'
+import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
+import type {
+  StorageAdapter, StorageConfig, Profile, StoredProfileJson,
+  CreateProfileInput, UpdateProfileInput,
+  ConsentDbRecord, ConsentSummary, ConsentHistoryEntry, ConsentValue, ConsentFilters,
+  CreateConsentInput, UpdateConsentInput,
+  Visitor, VisitorFilters, CreateVisitorInput, UpdateVisitorInput,
+  AdminUser, CreateUserInput, UpdateUserInput,
+  Role, CreateRoleInput, UpdateRoleInput,
+  Permission, AuditLog, AuditLogSummary, AuditFilters, CreateAuditLogInput,
+  OverviewStats, CategoryStats, TimelineEntry,
+  CountryStat, GpcStats, Tenant, ApiKey, CreateApiKeyInput,
+  CreateTenantInput, UpdateTenantInput, TenantSettings,
+  NoticeShownRecord, CreateNoticeShownInput, PagedResult,
+  ServerConsentTemplate, ServerUITemplate,
+  CreateConsentTemplateInput, UpdateConsentTemplateInput,
+  CreateUITemplateInput, UpdateUITemplateInput,
+  ProfileSummary, OptInFilters, OptInStats,
+} from '@consenti/types'
+
+// ── Raw row shapes ─────────────────────────────────────────────────────────────
+
+// pg auto-parses json/jsonb columns, so the *_json fields below are already the parsed shape.
+interface RowConsentTemplate {
+  id: string; tenant_id: string; name: string
+  cookies_json: ServerConsentTemplate['cookies']; categories_json: ServerConsentTemplate['categories']
+  created_at: string; updated_at: string
+}
+interface RowUITemplate {
+  id: string; tenant_id: string; name: string
+  settings_json: Omit<ServerUITemplate, 'id' | 'tenantId' | 'name' | 'createdAt' | 'updatedAt'>
+  created_at: string; updated_at: string
+}
+interface RowOptInConsent { locale: string; day: string; consent_json: ConsentValue }
+
+interface RowProfile {
+  id: string; tenant_id: string; name: string; default_locale: string
+  // pg auto-parses json/jsonb columns into JS values — never raw text, so these are typed as
+  // the parsed shape, not `string`. Do NOT JSON.parse() these in the mappers below.
+  version: number; profile_json: StoredProfileJson
+  created_at: string; updated_at: string
+}
+interface RowConsent {
+  id: string; tenant_id: string; visitor_id: string; profile_id: string; profile_version?: number | null
+  locale: string; consent_json: ConsentValue
+  gpc_detected: boolean; source: string; created_at: string; updated_at: string
+  age_verified?: boolean; parental_consent_token?: string | null; tcf_string?: string | null
+  gpp_string?: string | null
+  signature?: string | null
+}
+interface RowConsentSummary {
+  id: string; tenant_id: string; visitor_id: string; profile_id: string
+  locale: string; gpc_detected: boolean; source: string
+  age_verified?: boolean; created_at: string; updated_at: string
+}
+interface RowConsentHistory {
+  id: string; tenant_id: string; consent_record_id: string; visitor_id: string; profile_version?: number | null
+  old_json: ConsentValue | null; new_json: ConsentValue; action: string; created_at: string
+}
+interface RowVisitor {
+  id: string; tenant_id: string; visitor_id: string
+  country: string | null; region: string | null; city: string | null
+  ip_hash: string | null; user_agent_hash: string | null
+  first_seen: string; last_seen: string
+}
+interface RowNoticeShown {
+  id: string; tenant_id: string; visitor_id: string; profile_id: string
+  locale: string; created_at: string
+}
+interface RowUser {
+  id: string; tenant_id: string; name: string; email: string
+  password_hash: string; is_active: boolean; created_at: string; updated_at: string
+  totp_secret?: string | null; totp_enabled?: boolean
+}
+interface RowRole { id: string; tenant_id: string; name: string; description: string | null }
+interface RowPermission { id: string; name: string; description: string | null }
+interface RowAuditLog {
+  id: string; tenant_id: string; user_id: string | null; action: string
+  resource_type: string; resource_id: string | null
+  old_data: unknown; new_data: unknown; created_at: string
+}
+interface RowAuditLogSummary {
+  id: string; tenant_id: string; user_id: string | null; action: string
+  resource_type: string; resource_id: string | null; created_at: string
+}
+interface RowCount { total: string }
+interface RowStatus { status: string; count: string }
+interface RowDateCount { date: string; count: string }
+interface RowCookieStatus { cookie_id: string; status: string; count: string }
+interface RowCountry { country: string; count: string }
+interface RowApiKey {
+  id: string; tenant_id: string; key_hash: string; name: string; is_active: boolean
+  created_by: string | null; expire_by: string | null; created_at: string; updated_at: string | null
+}
+interface RowTenant { id: string; name: string; slug: string; created_at: string; updated_at: string }
+
+// ── Mappers ────────────────────────────────────────────────────────────────────
+
+function mapProfile(r: RowProfile): Profile {
+  return {
+    id: r.id, tenantId: r.tenant_id, name: r.name,
+    defaultLocale: r.default_locale, version: r.version,
+    profileJson: r.profile_json,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }
+}
+
+function mapConsent(r: RowConsent): ConsentDbRecord {
+  return {
+    id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id, profileId: r.profile_id,
+    ...(r.profile_version != null ? { profileVersion: r.profile_version } : {}),
+    locale: r.locale,
+    consentJson: r.consent_json,
+    gpcDetected: r.gpc_detected, source: r.source as ConsentDbRecord['source'],
+    createdAt: r.created_at, updatedAt: r.updated_at,
+    ...(r.age_verified != null ? { ageVerified: r.age_verified } : {}),
+    ...(r.parental_consent_token != null ? { parentalConsentToken: r.parental_consent_token } : {}),
+    ...(r.tcf_string != null ? { tcfString: r.tcf_string } : {}),
+    ...(r.gpp_string != null ? { gppString: r.gpp_string } : {}),
+    ...(r.signature != null ? { signature: r.signature } : {}),
+  }
+}
+
+const CONSENT_SUMMARY_COLS = 'id, tenant_id, visitor_id, profile_id, locale, gpc_detected, source, age_verified, created_at, updated_at'
+
+function mapConsentSummary(r: RowConsentSummary): ConsentSummary {
+  return {
+    id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id, profileId: r.profile_id,
+    locale: r.locale, gpcDetected: r.gpc_detected, source: r.source as ConsentDbRecord['source'],
+    createdAt: r.created_at, updatedAt: r.updated_at,
+    ...(r.age_verified != null ? { ageVerified: r.age_verified } : {}),
+  }
+}
+
+function mapHistory(r: RowConsentHistory): ConsentHistoryEntry {
+  return {
+    id: r.id, tenantId: r.tenant_id, consentRecordId: r.consent_record_id,
+    visitorId: r.visitor_id,
+    ...(r.profile_version != null ? { profileVersion: r.profile_version } : {}),
+    oldJson: r.old_json,
+    newJson: r.new_json,
+    action: r.action as ConsentHistoryEntry['action'], createdAt: r.created_at,
+  }
+}
+
+function mapVisitor(r: RowVisitor): Visitor {
+  return {
+    id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id,
+    ...(r.country != null ? { country: r.country } : {}),
+    ...(r.region != null ? { region: r.region } : {}),
+    ...(r.city != null ? { city: r.city } : {}),
+    ...(r.ip_hash != null ? { ipHash: r.ip_hash } : {}),
+    ...(r.user_agent_hash != null ? { userAgentHash: r.user_agent_hash } : {}),
+    firstSeen: r.first_seen, lastSeen: r.last_seen,
+  }
+}
+
+function mapUser(r: RowUser): AdminUser {
+  return {
+    id: r.id, tenantId: r.tenant_id, name: r.name, email: r.email,
+    passwordHash: r.password_hash, isActive: r.is_active,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+    totpEnabled: r.totp_enabled ?? false,
+    ...(r.totp_secret != null ? { totpSecret: r.totp_secret } : {}),
+  }
+}
+
+function mapRole(r: RowRole): Role {
+  return {
+    id: r.id, tenantId: r.tenant_id, name: r.name,
+    ...(r.description != null ? { description: r.description } : {}),
+  }
+}
+
+function mapPermission(r: RowPermission): Permission {
+  return {
+    id: r.id, name: r.name,
+    ...(r.description != null ? { description: r.description } : {}),
+  }
+}
+
+function mapAuditLog(r: RowAuditLog): AuditLog {
+  return {
+    id: r.id, tenantId: r.tenant_id, action: r.action, resourceType: r.resource_type,
+    ...(r.user_id != null ? { userId: r.user_id } : {}),
+    ...(r.resource_id != null ? { resourceId: r.resource_id } : {}),
+    ...(r.old_data != null ? { oldData: r.old_data } : {}),
+    ...(r.new_data != null ? { newData: r.new_data } : {}),
+    createdAt: r.created_at,
+  }
+}
+
+const AUDIT_SUMMARY_COLS = 'id, tenant_id, user_id, action, resource_type, resource_id, created_at'
+
+function mapAuditSummary(r: RowAuditLogSummary): AuditLogSummary {
+  return {
+    id: r.id, tenantId: r.tenant_id, action: r.action, resourceType: r.resource_type,
+    ...(r.user_id != null ? { userId: r.user_id } : {}),
+    ...(r.resource_id != null ? { resourceId: r.resource_id } : {}),
+    createdAt: r.created_at,
+  }
+}
+
+// ── Adapter ────────────────────────────────────────────────────────────────────
+
+export class PostgreSQLAdapter implements StorageAdapter {
+  private pool!: Pool
+
+  constructor(private config: StorageConfig) { }
+
+  private async q<T>(sql: string, params: (string | number | boolean | null)[] = []): Promise<T[]> {
+    const result: QueryResult<T & object> = await this.pool.query<T & object>(sql, params as unknown[])
+    return result.rows
+  }
+
+  async connect(): Promise<void> {
+    type PgModule = { Pool: new (cfg: Record<string, unknown>) => Pool }
+    const pg = (await import('pg')) as { default: PgModule }
+    const PgPool = pg.default.Pool
+    const cfg = this.config
+    const poolCfg: Record<string, unknown> = cfg.uri
+      ? { connectionString: cfg.uri }
+      : {
+        host: cfg.host ?? 'localhost',
+        port: cfg.port ?? 5432,
+        user: cfg.user ?? 'postgres',
+        password: cfg.password ?? '',
+        database: cfg.database ?? 'consenti',
+      }
+    // Bounded by default (5 — shared hosts commonly cap connections per database user, shared with
+    // every other app on the account; raise `poolMax` for a dedicated server). Timeouts stay
+    // unset unless configured: see StorageConfig.statementTimeoutMs's doc comment for why.
+    poolCfg['max'] = cfg.poolMax ?? 5
+    if (cfg.statementTimeoutMs != null) poolCfg['statement_timeout'] = cfg.statementTimeoutMs
+    if (cfg.idleInTransactionTimeoutMs != null) poolCfg['idle_in_transaction_session_timeout'] = cfg.idleInTransactionTimeoutMs
+    this.pool = new PgPool(poolCfg)
+    await this.migrate()
+  }
+
+  async disconnect(): Promise<void> {
+    await this.pool.end()
+  }
+
+  async migrate(): Promise<void> {
+    // A fresh connect creates the full current schema in one pass and stamps SCHEMA_VERSION; an
+    // older database is upgraded in place, gated on `schema_version` (see seed-data.ts for what
+    // each version changed).
+    const client: PoolClient = await this.pool.connect()
+    // Several instances booting against a fresh database would otherwise run the same DDL at once
+    // (the loser fails on a duplicate type/relation). An advisory lock needs no special privilege and
+    // is per-database; it is released in `finally` (or when the connection drops).
+    await client.query(`SELECT pg_advisory_lock(hashtext('consenti_schema'))`)
+    try {
+      const probe = await client.query<{ name: string; found: boolean }>(
+        `SELECT n AS name, to_regclass(n) IS NOT NULL AS found FROM unnest($1::text[]) AS n`,
+        [['consenti_schema_version', ...LEGACY_PROBE_NAMES]],
+      )
+      const present = new Set(probe.rows.filter(r => r.found).map(r => r.name))
+      if (!present.has('consenti_schema_version') && LEGACY_PROBE_NAMES.every(n => present.has(n))) {
+        throw legacyInstallError('tables')
+      }
+
+      let version = 0
+      if (present.has('consenti_schema_version')) {
+        const res = await client.query<{ version: number }>('SELECT version FROM consenti_schema_version ORDER BY version DESC LIMIT 1')
+        version = res.rows[0]?.version ?? 0
+      }
+
+      if (version === 0) {
+        await client.query('BEGIN')
+        try {
+          for (const stmt of SCHEMA_SQL_POSTGRES.split(';').map(s => s.trim()).filter(Boolean)) {
+            await client.query(stmt)
+          }
+          await this.seedTx(client)
+          await client.query('INSERT INTO consenti_schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING', [SCHEMA_VERSION])
+          await client.query('COMMIT')
+        } catch (err) {
+          await client.query('ROLLBACK')
+          throw new Error(
+            `Creating the Consenti tables failed: ${err instanceof Error ? err.message : String(err)}. ` +
+            `The database user needs CREATE on the schema it connects to (normally "public" — the database ` +
+            `owner has it) plus SELECT, INSERT, UPDATE and DELETE; it never creates databases, schemas or ` +
+            `extensions. Nothing was changed (one transaction, rolled back): fix the cause and start again.`,
+            { cause: err },
+          )
+        }
+      } else if (version < 2) {
+        try {
+          await this.migrateToV2(client)
+        } catch (err) {
+          throw new Error(
+            `Upgrading the database schema to v2 failed: ${err instanceof Error ? err.message : String(err)}. ` +
+            `The database user must own the tables (or be a superuser). Nothing was changed — the upgrade runs ` +
+            `in one transaction and was rolled back; fix the cause and start again.`,
+            { cause: err },
+          )
+        }
+      }
+    } finally {
+      try { await client.query(`SELECT pg_advisory_unlock(hashtext('consenti_schema'))`) } catch { /* connection already gone — the lock went with it */ }
+      client.release()
+    }
+  }
+
+  private async migrateToV2(client: PoolClient): Promise<void> {
+    await client.query('BEGIN')
+    try {
+      const fks = await client.query<{ tbl: string; name: string }>(
+        `SELECT c.conrelid::regclass::text AS tbl, c.conname AS name FROM pg_constraint c
+         WHERE c.contype = 'f' AND c.confrelid = to_regclass('consenti_profiles')
+           AND c.conrelid IN (to_regclass('consenti_consent_records'), to_regclass('consenti_notice_shown'))`,
+      )
+      for (const fk of fks.rows) {
+        await client.query(`ALTER TABLE ${fk.tbl} DROP CONSTRAINT "${fk.name.replace(/"/g, '""')}"`)
+      }
+      await client.query('ALTER TABLE consenti_consent_records ADD COLUMN IF NOT EXISTS profile_version INTEGER')
+      await client.query('ALTER TABLE consenti_consent_history ADD COLUMN IF NOT EXISTS profile_version INTEGER')
+      await client.query('INSERT INTO consenti_schema_version (version) VALUES ($1) ON CONFLICT DO NOTHING', [SCHEMA_VERSION])
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    }
+  }
+
+  private async seedTx(client: PoolClient): Promise<void> {
+    await client.query(
+      'INSERT INTO consenti_tenants (id, name, slug) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+      [SEED_TENANT.id, SEED_TENANT.name, SEED_TENANT.slug],
+    )
+    for (const p of SEED_PERMISSIONS) {
+      await client.query(
+        'INSERT INTO consenti_permissions (id, name, description) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [p.id, p.name, p.description],
+      )
+    }
+    for (const r of SEED_ROLES) {
+      await client.query(
+        'INSERT INTO consenti_roles (id, tenant_id, name, description) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING',
+        [r.id, r.tenantId, r.name, r.description],
+      )
+    }
+    for (const { roleId, permissionId } of SEED_ROLE_PERMISSIONS) {
+      await client.query(
+        'INSERT INTO consenti_role_permissions VALUES ($1,$2) ON CONFLICT DO NOTHING',
+        [roleId, permissionId],
+      )
+    }
+  }
+
+  // ── Profiles ─────────────────────────────────────────────────────────────────
+
+  async createProfile(data: CreateProfileInput): Promise<Profile> {
+    const id = randomProfileId()
+    const rows = await this.q<RowProfile>(
+      `INSERT INTO consenti_profiles (id, tenant_id, name, default_locale, version, profile_json)
+       VALUES ($1,$2,$3,$4,$5,$6::json) RETURNING *`,
+      [id, data.tenantId, data.name, data.defaultLocale, 1, JSON.stringify(data.profileJson)],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('Profile creation failed')
+    return mapProfile(row)
+  }
+
+  async updateProfile(id: string, data: UpdateProfileInput): Promise<Profile> {
+    const sets: string[] = ['updated_at = NOW()']
+    const vals: (string | number | boolean | null)[] = []
+    let idx = 1
+    if (data.name != null) { sets.push(`name=$${idx++}`); vals.push(data.name) }
+    if (data.defaultLocale != null) { sets.push(`default_locale=$${idx++}`); vals.push(data.defaultLocale) }
+    if (data.profileJson != null) { sets.push(`profile_json=$${idx++}::json`); vals.push(JSON.stringify(data.profileJson)) }
+    if (data.version != null) { sets.push(`version=$${idx++}`); vals.push(data.version) }
+    vals.push(id)
+    const rows = await this.q<RowProfile>(
+      `UPDATE consenti_profiles SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
+      vals,
+    )
+    const row = rows[0]
+    if (!row) throw new Error(`Profile ${id} not found`)
+    return mapProfile(row)
+  }
+
+  async deleteProfile(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_profiles WHERE id=$1', [id])
+  }
+
+  async getProfile(id: string): Promise<Profile | null> {
+    const rows = await this.q<RowProfile>('SELECT * FROM consenti_profiles WHERE id=$1', [id])
+    return rows[0] ? mapProfile(rows[0]) : null
+  }
+
+  async getProfiles(tenantId: string): Promise<Profile[]> {
+    const rows = await this.q<RowProfile>('SELECT * FROM consenti_profiles WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId])
+    return rows.map(mapProfile)
+  }
+
+  async findActiveProfileByComplianceGroup(tenantId: string, complianceGroup: string): Promise<Profile | null> {
+    const profiles = await this.getProfiles(tenantId)
+    return profiles.find(p =>
+      (p.profileJson.complianceGroup === complianceGroup || (p.profileJson as { customComplianceGroup?: string }).customComplianceGroup === complianceGroup) &&
+      p.profileJson.isActive
+    ) ?? null
+  }
+
+  // ── Consents ─────────────────────────────────────────────────────────────────
+
+  async createConsent(data: CreateConsentInput): Promise<ConsentDbRecord> {
+    const id = randomConsentId()
+    const rows = await this.q<RowConsent>(
+      `INSERT INTO consenti_consent_records (id, tenant_id, visitor_id, profile_id, profile_version, locale, consent_json, gpc_detected, source, age_verified, parental_consent_token, tcf_string, gpp_string, signature)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [id, data.tenantId, data.visitorId, data.profileId, data.profileVersion ?? null,
+        data.locale, JSON.stringify(data.consentJson), data.gpcDetected, data.source,
+        data.ageVerified ?? false, data.parentalConsentToken ?? null, data.tcfString ?? null, data.gppString ?? null, data.signature ?? null],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('Consent creation failed')
+    await this.writeHistory(id, data.tenantId, data.visitorId, null, data.consentJson, 'created', data.profileVersion ?? null)
+    return mapConsent(row)
+  }
+
+  async updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
+    const existing = await this.getConsent(visitorId)
+    if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
+    const sets: string[] = ['consent_json=$1::jsonb', 'updated_at=NOW()']
+    const vals: (string | number | boolean | null)[] = [JSON.stringify(data.consentJson)]
+    let idx = 2
+    if (data.profileVersion != null) { sets.push(`profile_version=$${idx++}`); vals.push(data.profileVersion) }
+    if (data.locale != null) { sets.push(`locale=$${idx++}`); vals.push(data.locale) }
+    if (data.gpcDetected != null) { sets.push(`gpc_detected=$${idx++}`); vals.push(data.gpcDetected) }
+    if (data.signature != null) { sets.push(`signature=$${idx++}`); vals.push(data.signature) }
+    vals.push(visitorId)
+    const rows = await this.q<RowConsent>(
+      `UPDATE consenti_consent_records SET ${sets.join(',')} WHERE visitor_id=$${idx} RETURNING *`,
+      vals,
+    )
+    const row = rows[0]
+    if (!row) throw new Error(`Consent for visitor ${visitorId} not found`)
+    await this.writeHistory(row.id, row.tenant_id, visitorId, existing.consentJson, data.consentJson, 'updated', data.profileVersion ?? existing.profileVersion ?? null)
+    return mapConsent(row)
+  }
+
+  async deleteConsent(visitorId: string): Promise<void> {
+    await this.q('DELETE FROM consenti_consent_history WHERE visitor_id=$1', [visitorId])
+    await this.q('DELETE FROM consenti_consent_records WHERE visitor_id=$1', [visitorId])
+  }
+
+  async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
+    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=$1', [visitorId])
+    return rows[0] ? mapConsent(rows[0]) : null
+  }
+
+  async getConsents(filters: ConsentFilters): Promise<PagedResult<ConsentSummary>> {
+    const { where, params, nextIdx } = this.buildConsentWhere(filters)
+    const page = filters.page ?? 1
+    const limit = filters.limit ?? 50
+    const [rows, countRows] = await Promise.all([
+      this.q<RowConsentSummary>(
+        `SELECT ${CONSENT_SUMMARY_COLS} ${where} ORDER BY created_at DESC LIMIT $${nextIdx} OFFSET $${nextIdx + 1}`,
+        [...params, limit, (page - 1) * limit],
+      ),
+      this.q<RowCount>(`SELECT COUNT(*)::int AS total ${where}`, params),
+    ])
+    return { items: rows.map(mapConsentSummary), total: Number(countRows[0]?.total ?? 0), page, limit }
+  }
+
+  async *streamConsents(filters: ConsentFilters): AsyncIterable<ConsentDbRecord> {
+    const { where, params } = this.buildConsentWhere(filters)
+    const rows = await this.q<RowConsent>(`SELECT * ${where} ORDER BY created_at ASC`, params)
+    for (const r of rows) yield mapConsent(r)
+  }
+
+  private buildConsentWhere(f: ConsentFilters): { where: string; params: (string | number | boolean | null)[]; nextIdx: number } {
+    let where = 'FROM consenti_consent_records WHERE tenant_id=$1'
+    const params: (string | number | boolean | null)[] = [f.tenantId]
+    let idx = 2
+    if (f.profileId != null) { where += ` AND profile_id=$${idx++}`; params.push(f.profileId) }
+    if (f.from != null) { where += ` AND created_at>=$${idx++}`; params.push(f.from) }
+    if (f.to != null) { where += ` AND created_at<=$${idx++}`; params.push(f.to) }
+    if (f.q) {
+      // No ESCAPE clause: backslash is already PostgreSQL's default LIKE/ILIKE escape character, which is what
+      // likePrefix() emits (a trailing `ESCAPE` after the closing paren is a syntax error and broke search).
+      where += ` AND (visitor_id ILIKE $${idx} OR profile_id ILIKE $${idx} OR locale ILIKE $${idx} OR source ILIKE $${idx})`
+      params.push(likePrefix(f.q))
+      idx++
+    }
+    return { where, params, nextIdx: idx }
+  }
+
+  private async writeHistory(
+    consentRecordId: string, tenantId: string, visitorId: string,
+    oldJson: ConsentValue | null, newJson: ConsentValue, action: string, profileVersion: number | null,
+  ): Promise<void> {
+    await this.q(
+      `INSERT INTO consenti_consent_history (id, tenant_id, consent_record_id, visitor_id, profile_version, old_json, new_json, action)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8)`,
+      [randomUUID(), tenantId, consentRecordId, visitorId, profileVersion,
+      oldJson ? JSON.stringify(oldJson) : null, JSON.stringify(newJson), action],
+    )
+  }
+
+  async getConsentHistory(visitorId: string): Promise<ConsentHistoryEntry[]> {
+    const rows = await this.q<RowConsentHistory>(
+      'SELECT * FROM consenti_consent_history WHERE visitor_id=$1 ORDER BY created_at ASC',
+      [visitorId],
+    )
+    return rows.map(mapHistory)
+  }
+
+  async createNoticeShown(data: CreateNoticeShownInput): Promise<NoticeShownRecord> {
+    const id = randomUUID()
+    const rows = await this.q<RowNoticeShown>(
+      `INSERT INTO consenti_notice_shown (id, tenant_id, visitor_id, profile_id, locale)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [id, data.tenantId, data.visitorId, data.profileId, data.locale],
+    )
+    const r = rows[0]!
+    return { id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id, profileId: r.profile_id, locale: r.locale, createdAt: r.created_at }
+  }
+
+  async getNoticeShownForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
+    const rows = await this.q<RowNoticeShown>(
+      'SELECT * FROM consenti_notice_shown WHERE visitor_id=$1 ORDER BY created_at DESC',
+      [visitorId],
+    )
+    return rows.map(r => ({
+      id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id,
+      profileId: r.profile_id, locale: r.locale, createdAt: r.created_at,
+    }))
+  }
+
+  // ── Visitors ─────────────────────────────────────────────────────────────────
+
+  async createVisitor(data: CreateVisitorInput): Promise<Visitor> {
+    const id = randomVisitorId()
+    const rows = await this.q<RowVisitor>(
+      `INSERT INTO consenti_visitors (id, tenant_id, visitor_id, country, region, city, ip_hash, user_agent_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [id, data.tenantId, data.visitorId,
+        data.country ?? null, data.region ?? null, data.city ?? null,
+        data.ipHash ?? null, data.userAgentHash ?? null],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('Visitor creation failed')
+    return mapVisitor(row)
+  }
+
+  async updateVisitor(visitorId: string, data: UpdateVisitorInput): Promise<Visitor> {
+    const sets: string[] = ['last_seen=NOW()']
+    const vals: (string | number | boolean | null)[] = []
+    let idx = 1
+    if (data.country != null) { sets.push(`country=$${idx++}`); vals.push(data.country) }
+    if (data.region != null) { sets.push(`region=$${idx++}`); vals.push(data.region) }
+    if (data.city != null) { sets.push(`city=$${idx++}`); vals.push(data.city) }
+    vals.push(visitorId)
+    const rows = await this.q<RowVisitor>(
+      `UPDATE consenti_visitors SET ${sets.join(',')} WHERE visitor_id=$${idx} RETURNING *`,
+      vals,
+    )
+    const row = rows[0]
+    if (!row) throw new Error(`Visitor ${visitorId} not found`)
+    return mapVisitor(row)
+  }
+
+  async deleteVisitor(visitorId: string): Promise<void> {
+    await this.q('DELETE FROM consenti_visitors WHERE visitor_id=$1', [visitorId])
+  }
+
+  async getVisitor(visitorId: string): Promise<Visitor | null> {
+    const rows = await this.q<RowVisitor>('SELECT * FROM consenti_visitors WHERE visitor_id=$1', [visitorId])
+    return rows[0] ? mapVisitor(rows[0]) : null
+  }
+
+  async getVisitors(filters: VisitorFilters): Promise<PagedResult<Visitor>> {
+    let where = 'FROM consenti_visitors WHERE tenant_id=$1'
+    const params: (string | number | boolean | null)[] = [filters.tenantId]
+    let idx = 2
+    if (filters.from != null) { where += ` AND first_seen>=$${idx++}`; params.push(filters.from) }
+    if (filters.to != null) { where += ` AND first_seen<=$${idx++}`; params.push(filters.to) }
+    if (filters.q) {
+      where += ` AND (visitor_id ILIKE $${idx} OR country ILIKE $${idx})`
+      params.push(likePrefix(filters.q))
+      idx++
+    }
+    const page = filters.page ?? 1
+    const limit = filters.limit ?? 50
+    const [rows, countRows] = await Promise.all([
+      this.q<RowVisitor>(
+        `SELECT * ${where} ORDER BY first_seen DESC LIMIT $${idx} OFFSET $${idx + 1}`,
+        [...params, limit, (page - 1) * limit],
+      ),
+      this.q<RowCount>(`SELECT COUNT(*)::int AS total ${where}`, params),
+    ])
+    return { items: rows.map(mapVisitor), total: Number(countRows[0]?.total ?? 0), page, limit }
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────────
+
+  async getOverviewStats(tenantId: string): Promise<OverviewStats> {
+    const [[countRow], [gpcRow], [visitorRow]] = await Promise.all([
+      this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_consent_records WHERE tenant_id=$1', [tenantId]),
+      this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_consent_records WHERE tenant_id=$1 AND gpc_detected=true', [tenantId]),
+      this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_visitors WHERE tenant_id=$1', [tenantId]),
+    ])
+    const total = Number(countRow?.total ?? 0)
+    const gpcCount = Number(gpcRow?.total ?? 0)
+    const visitors = Number(visitorRow?.total ?? 0)
+
+    const statusRows = await this.q<RowStatus>(
+      `SELECT val AS status, COUNT(*)::int AS count
+       FROM consenti_consent_records cr,
+            jsonb_each_text(cr.consent_json) AS kv(key, val)
+       WHERE cr.tenant_id=$1
+       GROUP BY val`,
+      [tenantId],
+    )
+    let granted = 0, denied = 0, all = 0
+    for (const r of statusRows) {
+      all += Number(r.count)
+      if (r.status === 'granted') granted = Number(r.count)
+      if (r.status === 'denied') denied = Number(r.count)
+    }
+    return {
+      totalConsents: total,
+      acceptedPct: all > 0 ? Math.round((granted / all) * 100) : 0,
+      rejectedPct: all > 0 ? Math.round((denied / all) * 100) : 0,
+      totalVisitors: visitors,
+      gpcDetectedCount: gpcCount,
+    }
+  }
+
+  async getCategoryStats(tenantId: string): Promise<CategoryStats> {
+    const rows = await this.q<RowCookieStatus>(
+      `SELECT kv.key AS cookie_id, kv.val AS status, COUNT(*)::int AS count
+       FROM consenti_consent_records cr,
+            jsonb_each_text(cr.consent_json) AS kv(key, val)
+       WHERE cr.tenant_id=$1
+       GROUP BY kv.key, kv.val`,
+      [tenantId],
+    )
+    const result: CategoryStats = {}
+    for (const r of rows) {
+      if (!result[r.cookie_id]) result[r.cookie_id] = { granted: 0, denied: 0, objected: 0 }
+      const entry = result[r.cookie_id]
+      if (entry) {
+        if (r.status === 'granted') entry.granted += Number(r.count)
+        if (r.status === 'denied') entry.denied += Number(r.count)
+        if (r.status === 'objected') entry.objected += Number(r.count)
+      }
+    }
+    return result
+  }
+
+  async getTimeline(tenantId: string, days = 30): Promise<TimelineEntry[]> {
+    const from = new Date(Date.now() - days * 86400_000).toISOString()
+    const rows = await this.q<RowDateCount>(
+      `SELECT to_char(created_at, 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
+       FROM consenti_consent_records
+       WHERE tenant_id=$1 AND created_at>=$2
+       GROUP BY to_char(created_at, 'YYYY-MM-DD')
+       ORDER BY date ASC`,
+      [tenantId, from],
+    )
+    return rows.map(r => ({ date: r.date, count: Number(r.count) }))
+  }
+
+  // ── Users ─────────────────────────────────────────────────────────────────────
+
+  async createUser(data: CreateUserInput): Promise<AdminUser> {
+    const id = randomUUID()
+    const rows = await this.q<RowUser>(
+      'INSERT INTO consenti_users (id, tenant_id, name, email, password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [id, data.tenantId, data.name, data.email, data.passwordHash],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('User creation failed')
+    return mapUser(row)
+  }
+
+  async updateUser(id: string, data: UpdateUserInput): Promise<AdminUser> {
+    const sets: string[] = ['updated_at=NOW()']
+    const vals: (string | number | boolean | null)[] = []
+    let idx = 1
+    if (data.name != null) { sets.push(`name=$${idx++}`); vals.push(data.name) }
+    if (data.email != null) { sets.push(`email=$${idx++}`); vals.push(data.email) }
+    if (data.passwordHash != null) { sets.push(`password_hash=$${idx++}`); vals.push(data.passwordHash) }
+    if (data.isActive != null) { sets.push(`is_active=$${idx++}`); vals.push(data.isActive) }
+    vals.push(id)
+    const rows = await this.q<RowUser>(
+      `UPDATE consenti_users SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
+      vals,
+    )
+    const row = rows[0]
+    if (!row) throw new Error(`User ${id} not found`)
+    return mapUser(row)
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_user_roles WHERE user_id=$1', [id])
+    await this.q('DELETE FROM consenti_users WHERE id=$1', [id])
+  }
+
+  async getUserById(id: string): Promise<AdminUser | null> {
+    const rows = await this.q<RowUser>('SELECT * FROM consenti_users WHERE id=$1', [id])
+    return rows[0] ? mapUser(rows[0]) : null
+  }
+
+  async getUserByEmail(email: string): Promise<AdminUser | null> {
+    const rows = await this.q<RowUser>('SELECT * FROM consenti_users WHERE email=$1', [email])
+    return rows[0] ? mapUser(rows[0]) : null
+  }
+
+  async getUsers(tenantId: string): Promise<AdminUser[]> {
+    const rows = await this.q<RowUser>('SELECT * FROM consenti_users WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId])
+    return rows.map(mapUser)
+  }
+
+  async countUsers(tenantId?: string): Promise<number> {
+    const rows = tenantId
+      ? await this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_users WHERE tenant_id=$1', [tenantId])
+      : await this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_users')
+    return Number(rows[0]?.total ?? 0)
+  }
+
+  // ── Roles & permissions ───────────────────────────────────────────────────────
+
+  async getRoles(tenantId: string): Promise<Role[]> {
+    const rows = await this.q<RowRole>('SELECT * FROM consenti_roles WHERE tenant_id=$1', [tenantId])
+    return rows.map(mapRole)
+  }
+
+  async createRole(data: CreateRoleInput): Promise<Role> {
+    const id = randomUUID()
+    const rows = await this.q<RowRole>(
+      'INSERT INTO consenti_roles (id, tenant_id, name, description) VALUES ($1,$2,$3,$4) RETURNING *',
+      [id, data.tenantId, data.name, data.description ?? null],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('Role creation failed')
+    return mapRole(row)
+  }
+
+  async updateRole(id: string, data: UpdateRoleInput): Promise<Role> {
+    const sets: string[] = []
+    const vals: (string | number | boolean | null)[] = []
+    let idx = 1
+    if (data.name != null) { sets.push(`name=$${idx++}`); vals.push(data.name) }
+    if (data.description != null) { sets.push(`description=$${idx++}`); vals.push(data.description) }
+    if (sets.length === 0) {
+      const rows = await this.q<RowRole>('SELECT * FROM consenti_roles WHERE id=$1', [id])
+      const row = rows[0]
+      if (!row) throw new Error(`Role ${id} not found`)
+      return mapRole(row)
+    }
+    vals.push(id)
+    const rows = await this.q<RowRole>(`UPDATE consenti_roles SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`, vals)
+    const row = rows[0]
+    if (!row) throw new Error(`Role ${id} not found`)
+    return mapRole(row)
+  }
+
+  async deleteRole(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_role_permissions WHERE role_id=$1', [id])
+    await this.q('DELETE FROM consenti_user_roles WHERE role_id=$1', [id])
+    await this.q('DELETE FROM consenti_roles WHERE id=$1', [id])
+  }
+
+  async getAllPermissions(): Promise<Permission[]> {
+    const rows = await this.q<RowPermission>('SELECT * FROM consenti_permissions ORDER BY name')
+    return rows.map(mapPermission)
+  }
+
+  async getPermissionsForRole(roleId: string): Promise<Permission[]> {
+    const rows = await this.q<RowPermission>(
+      'SELECT p.* FROM consenti_permissions p JOIN consenti_role_permissions rp ON p.id=rp.permission_id WHERE rp.role_id=$1',
+      [roleId],
+    )
+    return rows.map(mapPermission)
+  }
+
+  async getUserRoles(userId: string, tenantId?: string): Promise<Role[]> {
+    const rows = tenantId
+      ? await this.q<RowRole>(
+        'SELECT r.* FROM consenti_roles r JOIN consenti_user_roles ur ON r.id=ur.role_id WHERE ur.user_id=$1 AND ur.tenant_id=$2',
+        [userId, tenantId],
+      )
+      : await this.q<RowRole>(
+        'SELECT r.* FROM consenti_roles r JOIN consenti_user_roles ur ON r.id=ur.role_id WHERE ur.user_id=$1',
+        [userId],
+      )
+    return rows.map(mapRole)
+  }
+
+  async assignRole(userId: string, roleId: string, tenantId = 'default'): Promise<void> {
+    await this.q('INSERT INTO consenti_user_roles (user_id, role_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [userId, roleId, tenantId])
+  }
+
+  async revokeRole(userId: string, roleId: string, tenantId?: string): Promise<void> {
+    if (tenantId) {
+      await this.q('DELETE FROM consenti_user_roles WHERE user_id=$1 AND role_id=$2 AND tenant_id=$3', [userId, roleId, tenantId])
+    } else {
+      await this.q('DELETE FROM consenti_user_roles WHERE user_id=$1 AND role_id=$2', [userId, roleId])
+    }
+  }
+
+  async assignPermissionToRole(roleId: string, permissionId: string): Promise<void> {
+    await this.q('INSERT INTO consenti_role_permissions (role_id, permission_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [roleId, permissionId])
+  }
+
+  async revokePermissionFromRole(roleId: string, permissionId: string): Promise<void> {
+    await this.q('DELETE FROM consenti_role_permissions WHERE role_id=$1 AND permission_id=$2', [roleId, permissionId])
+  }
+
+  // ── Audit logs ────────────────────────────────────────────────────────────────
+
+  async createLog(data: CreateAuditLogInput): Promise<void> {
+    await this.q(
+      `INSERT INTO consenti_audit_logs (id, tenant_id, user_id, action, resource_type, resource_id, old_data, new_data)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)`,
+      [randomUUID(), data.tenantId, data.userId ?? null, data.action, data.resourceType,
+      data.resourceId ?? null,
+      data.oldData != null ? JSON.stringify(data.oldData) : null,
+      data.newData != null ? JSON.stringify(data.newData) : null],
+    )
+  }
+
+  async getLogs(filters: AuditFilters): Promise<PagedResult<AuditLogSummary>> {
+    const { where, params, nextIdx } = this.buildAuditWhere(filters)
+    const page = filters.page ?? 1
+    const limit = filters.limit ?? 50
+    const [rows, countRows] = await Promise.all([
+      this.q<RowAuditLogSummary>(
+        `SELECT ${AUDIT_SUMMARY_COLS} ${where} ORDER BY created_at DESC LIMIT $${nextIdx} OFFSET $${nextIdx + 1}`,
+        [...params, limit, (page - 1) * limit],
+      ),
+      this.q<RowCount>(`SELECT COUNT(*)::int AS total ${where}`, params),
+    ])
+    return { items: rows.map(mapAuditSummary), total: Number(countRows[0]?.total ?? 0), page, limit }
+  }
+
+  async getAuditLogById(id: string): Promise<AuditLog | null> {
+    const rows = await this.q<RowAuditLog>('SELECT * FROM consenti_audit_logs WHERE id=$1', [id])
+    return rows[0] ? mapAuditLog(rows[0]) : null
+  }
+
+  async *streamAuditLogs(filters: AuditFilters): AsyncIterable<AuditLog> {
+    const { where, params } = this.buildAuditWhere(filters)
+    const rows = await this.q<RowAuditLog>(`SELECT * ${where} ORDER BY created_at ASC`, params)
+    for (const r of rows) yield mapAuditLog(r)
+  }
+
+  private buildAuditWhere(f: AuditFilters): { where: string; params: (string | number | boolean | null)[]; nextIdx: number } {
+    let where = 'FROM consenti_audit_logs WHERE tenant_id=$1'
+    const params: (string | number | boolean | null)[] = [f.tenantId]
+    let idx = 2
+    if (f.action != null) { where += ` AND action=$${idx++}`; params.push(f.action) }
+    if (f.resourceType != null) { where += ` AND resource_type=$${idx++}`; params.push(f.resourceType) }
+    if (f.from != null) { where += ` AND created_at>=$${idx++}`; params.push(f.from) }
+    if (f.to != null) { where += ` AND created_at<=$${idx++}`; params.push(f.to) }
+    if (f.q) {
+      where += ` AND (action ILIKE $${idx} OR resource_type ILIKE $${idx} OR resource_id ILIKE $${idx} OR user_id ILIKE $${idx})`
+      params.push(likePrefix(f.q))
+      idx++
+    }
+    return { where, params, nextIdx: idx }
+  }
+
+  // ── Stats extensions ───────────────────────────────────────────────────────────
+
+  async getCountries(tenantId: string): Promise<CountryStat[]> {
+    const rows = await this.q<RowCountry>(
+      `SELECT v.country, COUNT(*)::int AS count FROM consenti_consent_records cr
+       JOIN consenti_visitors v ON v.visitor_id=cr.visitor_id
+       WHERE cr.tenant_id=$1 AND v.country IS NOT NULL
+       GROUP BY v.country ORDER BY count DESC LIMIT 50`,
+      [tenantId],
+    )
+    return rows.map(r => ({ country: r.country, count: Number(r.count) }))
+  }
+
+  async getGpcStats(tenantId: string): Promise<GpcStats> {
+    const [t] = await this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_consent_records WHERE tenant_id=$1', [tenantId])
+    const [d] = await this.q<RowCount>('SELECT COUNT(*)::int AS total FROM consenti_consent_records WHERE tenant_id=$1 AND gpc_detected=TRUE', [tenantId])
+    const total = Number(t?.total ?? 0)
+    const detected = Number(d?.total ?? 0)
+    return { detected, total, rate: total > 0 ? Math.round((detected / total) * 100) : 0 }
+  }
+
+  // ── Tenants ───────────────────────────────────────────────────────────────────
+
+  async getTenants(): Promise<Tenant[]> {
+    const rows = await this.q<RowTenant>('SELECT * FROM consenti_tenants ORDER BY name ASC', [])
+    return rows.map(r => ({ id: r.id, name: r.name, slug: r.slug, createdAt: r.created_at, updatedAt: r.updated_at }))
+  }
+
+  // ── API Keys ──────────────────────────────────────────────────────────────────
+
+  private mapApiKey(r: RowApiKey): ApiKey {
+    return {
+      id: r.id, tenantId: r.tenant_id, keyHash: r.key_hash, name: r.name, isActive: r.is_active,
+      ...(r.created_by !== null ? { createdBy: r.created_by } : {}),
+      ...(r.expire_by !== null ? { expireBy: r.expire_by } : {}),
+      createdAt: r.created_at,
+      ...(r.updated_at !== null ? { updatedAt: r.updated_at } : {}),
+    }
+  }
+
+  async createApiKey(data: CreateApiKeyInput): Promise<ApiKey> {
+    const id = randomUUID()
+    const rows = await this.q<RowApiKey>(
+      'INSERT INTO consenti_api_keys (id, tenant_id, key_hash, name, created_by, expire_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [id, data.tenantId, data.keyHash, data.name, data.createdBy ?? null, data.expireBy ?? null],
+    )
+    const r = rows[0]
+    if (!r) throw new Error('Failed to create API key')
+    return this.mapApiKey(r)
+  }
+
+  async getApiKeyByHash(keyHash: string): Promise<ApiKey | null> {
+    const rows = await this.q<RowApiKey>('SELECT * FROM consenti_api_keys WHERE key_hash=$1 AND is_active=TRUE', [keyHash])
+    const r = rows[0]
+    return r ? this.mapApiKey(r) : null
+  }
+
+  async revokeApiKey(id: string): Promise<void> {
+    await this.q('UPDATE consenti_api_keys SET is_active=FALSE, updated_at=NOW() WHERE id=$1', [id])
+  }
+
+  async reactivateApiKey(id: string): Promise<void> {
+    await this.q(
+      "UPDATE consenti_api_keys SET is_active=TRUE, updated_at=NOW(), expire_by=CASE WHEN expire_by <= NOW() THEN NULL ELSE expire_by END WHERE id=$1",
+      [id],
+    )
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_api_keys WHERE id=$1', [id])
+  }
+
+  async getApiKeys(tenantId: string): Promise<ApiKey[]> {
+    const rows = await this.q<RowApiKey>('SELECT * FROM consenti_api_keys WHERE tenant_id=$1 ORDER BY created_at DESC', [tenantId])
+    return rows.map(r => this.mapApiKey(r))
+  }
+
+  async createTenant(data: CreateTenantInput): Promise<Tenant> {
+    const id = randomUUID()
+    const now = new Date().toISOString()
+    const rows = await this.q<RowTenant>(
+      'INSERT INTO consenti_tenants (id, name, slug, created_at, updated_at) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [id, data.name, data.slug, now, now],
+    )
+    const r = rows[0]
+    if (!r) throw new Error('Failed to create tenant')
+    return { id: r.id, name: r.name, slug: r.slug, createdAt: r.created_at, updatedAt: r.updated_at }
+  }
+
+  async updateTenant(id: string, data: UpdateTenantInput): Promise<Tenant> {
+    const now = new Date().toISOString()
+    const sets: string[] = ['updated_at=$1']
+    const vals: (string | number)[] = [now]
+    let idx = 2
+    if (data.name != null) { sets.push(`name=$${idx++}`); vals.push(data.name) }
+    if (data.slug != null) { sets.push(`slug=$${idx++}`); vals.push(data.slug) }
+    vals.push(id)
+    const rows = await this.q<RowTenant>(
+      `UPDATE consenti_tenants SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`, vals,
+    )
+    const r = rows[0]
+    if (!r) throw new Error(`Tenant ${id} not found`)
+    return { id: r.id, name: r.name, slug: r.slug, createdAt: r.created_at, updatedAt: r.updated_at }
+  }
+
+  async deleteTenant(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_tenants WHERE id=$1', [id])
+  }
+
+  async getSettings(tenantId: string): Promise<TenantSettings> {
+    const rows = await this.q<{
+      allowed_origins_json: string[]; admin_allowed_origins_json: string[]; setup_completed: boolean
+      profiles_seeded: boolean; tcf_confirmation_json: TenantSettings['tcfConfirmation'] | null; gpp_confirmation_json: TenantSettings['gppConfirmation'] | null
+    }>(
+      'SELECT allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json FROM consenti_tenant_settings WHERE tenant_id=$1', [tenantId],
+    )
+    const r = rows[0]
+    return r
+      ? {
+        allowedOrigins: r.allowed_origins_json,
+        adminAllowedOrigins: r.admin_allowed_origins_json,
+        setupCompleted: r.setup_completed,
+        profilesSeeded: r.profiles_seeded,
+        ...(r.tcf_confirmation_json ? { tcfConfirmation: r.tcf_confirmation_json } : {}),
+        ...(r.gpp_confirmation_json ? { gppConfirmation: r.gpp_confirmation_json } : {}),
+      }
+      : {}
+  }
+
+  async updateSettings(tenantId: string, data: Partial<TenantSettings>): Promise<TenantSettings> {
+    const current = await this.getSettings(tenantId)
+    const merged = { ...current, ...data }
+    await this.q(
+      `INSERT INTO consenti_tenant_settings (tenant_id, allowed_origins_json, admin_allowed_origins_json, setup_completed, profiles_seeded, tcf_confirmation_json, gpp_confirmation_json, updated_at) VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6::jsonb,$7::jsonb,NOW())
+       ON CONFLICT (tenant_id) DO UPDATE SET allowed_origins_json=$2::jsonb, admin_allowed_origins_json=$3::jsonb, setup_completed=$4, profiles_seeded=$5, tcf_confirmation_json=$6::jsonb, gpp_confirmation_json=$7::jsonb, updated_at=NOW()`,
+      [
+        tenantId, JSON.stringify(merged.allowedOrigins ?? []), JSON.stringify(merged.adminAllowedOrigins ?? []), merged.setupCompleted ?? false,
+        merged.profilesSeeded ?? false, merged.tcfConfirmation ? JSON.stringify(merged.tcfConfirmation) : null, merged.gppConfirmation ? JSON.stringify(merged.gppConfirmation) : null,
+      ],
+    )
+    return this.getSettings(tenantId)
+  }
+
+  async purgeExpiredConsents(olderThanDays: number): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanDays * 86_400_000).toISOString()
+    const visitorRows = await this.q<{ visitor_id: string }>(
+      'SELECT visitor_id FROM consenti_consent_records WHERE created_at < $1', [cutoff]
+    )
+    if (visitorRows.length === 0) return 0
+    const ids = visitorRows.map(r => r.visitor_id)
+    const placeholders = ids.map((_: string, i: number) => `$${i + 1}`).join(',')
+    await this.q(`DELETE FROM consenti_consent_history WHERE visitor_id IN (${placeholders})`, ids)
+    await this.q(`DELETE FROM consenti_consent_records WHERE visitor_id IN (${placeholders})`, ids)
+    return ids.length
+  }
+
+  // ── Consent Templates ────────────────────────────────────────────────────────
+
+  private mapConsentTemplate(r: RowConsentTemplate): ServerConsentTemplate {
+    return {
+      id: r.id, tenantId: r.tenant_id, name: r.name,
+      cookies: r.cookies_json, categories: r.categories_json,
+      createdAt: r.created_at, updatedAt: r.updated_at,
+    }
+  }
+
+  async createConsentTemplate(data: CreateConsentTemplateInput): Promise<ServerConsentTemplate> {
+    const rows = await this.q<RowConsentTemplate>(
+      `INSERT INTO consenti_consent_templates (id, tenant_id, name, cookies_json, categories_json)
+       VALUES ($1,$2,$3,$4::json,$5::json) RETURNING *`,
+      [randomConsentTemplateId(), data.tenantId, data.name, JSON.stringify(data.cookies), JSON.stringify(data.categories)],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('Consent template creation failed')
+    return this.mapConsentTemplate(row)
+  }
+
+  async updateConsentTemplate(id: string, data: UpdateConsentTemplateInput): Promise<ServerConsentTemplate> {
+    const sets: string[] = ['updated_at = NOW()']
+    const vals: string[] = []
+    let idx = 1
+    if (data.name !== undefined) { sets.push(`name=$${idx++}`); vals.push(data.name) }
+    if (data.cookies !== undefined) { sets.push(`cookies_json=$${idx++}::json`); vals.push(JSON.stringify(data.cookies)) }
+    if (data.categories !== undefined) { sets.push(`categories_json=$${idx++}::json`); vals.push(JSON.stringify(data.categories)) }
+    const rows = await this.q<RowConsentTemplate>(
+      `UPDATE consenti_consent_templates SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
+      [...vals, id],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('Consent template not found')
+    return this.mapConsentTemplate(row)
+  }
+
+  async deleteConsentTemplate(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_consent_templates WHERE id=$1', [id])
+  }
+
+  async getConsentTemplate(id: string): Promise<ServerConsentTemplate | null> {
+    const rows = await this.q<RowConsentTemplate>('SELECT * FROM consenti_consent_templates WHERE id=$1', [id])
+    return rows[0] ? this.mapConsentTemplate(rows[0]) : null
+  }
+
+  async getConsentTemplates(tenantId: string): Promise<ServerConsentTemplate[]> {
+    const rows = await this.q<RowConsentTemplate>('SELECT * FROM consenti_consent_templates WHERE tenant_id=$1 ORDER BY name ASC', [tenantId])
+    return rows.map(r => this.mapConsentTemplate(r))
+  }
+
+  async copyConsentTemplate(id: string, newName: string): Promise<ServerConsentTemplate> {
+    const src = await this.getConsentTemplate(id)
+    if (!src) throw new Error('Consent template not found')
+    return this.createConsentTemplate({ tenantId: src.tenantId, name: newName, cookies: src.cookies, categories: src.categories })
+  }
+
+  // ── UI Templates ─────────────────────────────────────────────────────────────
+
+  private mapUITemplate(r: RowUITemplate): ServerUITemplate {
+    return { id: r.id, tenantId: r.tenant_id, name: r.name, ...r.settings_json, createdAt: r.created_at, updatedAt: r.updated_at }
+  }
+
+  async createUITemplate(data: CreateUITemplateInput): Promise<ServerUITemplate> {
+    const { tenantId, name, ...settings } = data
+    const rows = await this.q<RowUITemplate>(
+      `INSERT INTO consenti_ui_templates (id, tenant_id, name, settings_json) VALUES ($1,$2,$3,$4::json) RETURNING *`,
+      [randomUITemplateId(), tenantId, name, JSON.stringify(settings)],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('UI template creation failed')
+    return this.mapUITemplate(row)
+  }
+
+  async updateUITemplate(id: string, data: UpdateUITemplateInput): Promise<ServerUITemplate> {
+    const current = await this.q<RowUITemplate>('SELECT * FROM consenti_ui_templates WHERE id=$1', [id])
+    if (!current[0]) throw new Error('UI template not found')
+    const { name, ...settingsUpdate } = data
+    const sets: string[] = ['updated_at = NOW()']
+    const vals: string[] = []
+    let idx = 1
+    if (name !== undefined) { sets.push(`name=$${idx++}`); vals.push(name) }
+    if (Object.keys(settingsUpdate).length > 0) {
+      sets.push(`settings_json=$${idx++}::json`)
+      vals.push(JSON.stringify({ ...current[0].settings_json, ...settingsUpdate }))
+    }
+    const rows = await this.q<RowUITemplate>(
+      `UPDATE consenti_ui_templates SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
+      [...vals, id],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('UI template not found')
+    return this.mapUITemplate(row)
+  }
+
+  async deleteUITemplate(id: string): Promise<void> {
+    await this.q('DELETE FROM consenti_ui_templates WHERE id=$1', [id])
+  }
+
+  async getUITemplate(id: string): Promise<ServerUITemplate | null> {
+    const rows = await this.q<RowUITemplate>('SELECT * FROM consenti_ui_templates WHERE id=$1', [id])
+    return rows[0] ? this.mapUITemplate(rows[0]) : null
+  }
+
+  async getUITemplates(tenantId: string): Promise<ServerUITemplate[]> {
+    const rows = await this.q<RowUITemplate>('SELECT * FROM consenti_ui_templates WHERE tenant_id=$1 ORDER BY name ASC', [tenantId])
+    return rows.map(r => this.mapUITemplate(r))
+  }
+
+  async copyUITemplate(id: string, newName: string): Promise<ServerUITemplate> {
+    const src = await this.getUITemplate(id)
+    if (!src) throw new Error('UI template not found')
+    const { tenantId, mainBanner, gpcBanner, preferenceModal } = src
+    return this.createUITemplate({ tenantId, name: newName, mainBanner, gpcBanner, preferenceModal })
+  }
+
+  // ── Profile summaries ────────────────────────────────────────────────────────
+
+  private async toProfileSummaries(profiles: Profile[]): Promise<ProfileSummary[]> {
+    if (profiles.length === 0) return []
+    const tenantIds = [...new Set(profiles.map(p => p.tenantId))]
+    const [consentTemplates, uiTemplates] = await Promise.all([
+      Promise.all(tenantIds.map(t => this.getConsentTemplates(t))),
+      Promise.all(tenantIds.map(t => this.getUITemplates(t))),
+    ])
+    return buildProfileSummaries(
+      profiles,
+      new Map(consentTemplates.flat().map(t => [t.id, t.name])),
+      new Map(uiTemplates.flat().map(t => [t.id, t.name])),
+    )
+  }
+
+  async listProfilesSummary(tenantId: string): Promise<ProfileSummary[]> {
+    const rows = await this.q<RowProfile>('SELECT * FROM consenti_profiles WHERE tenant_id=$1 ORDER BY created_at ASC', [tenantId])
+    return this.toProfileSummaries(rows.map(mapProfile))
+  }
+
+  async findProfilesUsingConsentTemplate(templateId: string): Promise<ProfileSummary[]> {
+    const rows = await this.q<RowProfile>(`SELECT * FROM consenti_profiles WHERE profile_json->>'consentTemplateId'=$1 ORDER BY name ASC`, [templateId])
+    return this.toProfileSummaries(rows.map(mapProfile))
+  }
+
+  async findProfilesUsingUITemplate(templateId: string): Promise<ProfileSummary[]> {
+    const rows = await this.q<RowProfile>(`SELECT * FROM consenti_profiles WHERE profile_json->>'uiTemplateId'=$1 ORDER BY name ASC`, [templateId])
+    return this.toProfileSummaries(rows.map(mapProfile))
+  }
+
+  // ── Opt-in stats ─────────────────────────────────────────────────────────────
+
+  async getOptInStats(tenantId: string, filters: OptInFilters): Promise<OptInStats> {
+    let where = 'tenant_id=$1'
+    const params: string[] = [tenantId]
+    if (filters.profileId) { params.push(filters.profileId); where += ` AND profile_id=$${params.length}` }
+    if (filters.from) { params.push(filters.from); where += ` AND created_at>=$${params.length}` }
+    if (filters.to) { params.push(filters.to); where += ` AND created_at<=$${params.length}` }
+    if (filters.locale) { params.push(filters.locale); where += ` AND locale=$${params.length}` }
+
+    const rows = await this.q<RowOptInConsent>(
+      `SELECT locale, to_char(created_at, 'YYYY-MM-DD') AS day, consent_json FROM consenti_consent_records WHERE ${where} ORDER BY created_at ASC`,
+      params,
+    )
+    return tallyOptIn(rows.map(r => ({ locale: r.locale, day: r.day, consentJson: r.consent_json })))
+  }
+}

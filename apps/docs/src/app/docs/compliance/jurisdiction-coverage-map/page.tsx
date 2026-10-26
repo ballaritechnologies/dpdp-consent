@@ -1,0 +1,364 @@
+import type { Metadata } from 'next'
+import {
+  COMPLIANCE_GROUP_IDS,
+  COMPLIANCE_GROUPS,
+  EMBEDDED_COMPLIANCE_MAP,
+  LOCALES,
+} from '@consenti/utils'
+import { Callout } from '@/components/Callout'
+import { SortableTable, type SortableTableRow } from '@/components/SortableTable'
+import {
+  COMPLIANCE_TIER_LABELS,
+  COMPLIANCE_TIER_STYLES,
+  type ComplianceTier,
+} from '@/components/ComplianceTierBadge'
+
+export const metadata: Metadata = {
+  title: 'Jurisdiction Coverage Map',
+  description:
+    'Every country and region Consenti maps out of the box, the law(s) that apply, and which of the 8 built-in compliance groups it resolves to — plus every supported locale.',
+  alternates: { canonical: 'https://consenti.dev/docs/compliance/jurisdiction-coverage-map' },
+  openGraph: {
+    title: 'Jurisdiction Coverage Map',
+    description:
+      'Every country and region Consenti maps out of the box, the law(s) that apply, and which of the 8 built-in compliance groups it resolves to — plus every supported locale.',
+    url: 'https://consenti.dev/docs/compliance/jurisdiction-coverage-map',
+    siteName: 'Consenti Docs',
+    images: ['/og-image.jpg'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Jurisdiction Coverage Map',
+    description:
+      'Every country and region Consenti maps out of the box, the law(s) that apply, and which of the 8 built-in compliance groups it resolves to — plus every supported locale.',
+    images: ['/og-image.jpg'],
+  },
+}
+
+interface RegionEntry {
+  name: string
+  type: 'region'
+  complianceGroup: string
+  description: string
+  /** Per-region carve-out: cookies tagged `cpraCategory: 'sensitive'` default to denied for
+   * this region even though the rest of `complianceGroup`'s cookies default to granted. */
+  requiresSensitiveOptIn?: boolean
+}
+
+interface CountryEntry {
+  name: string
+  type: 'country'
+  complianceGroup: string
+  default: string
+  description: string
+  locales: readonly string[]
+  compliance: readonly string[]
+  timezones: readonly string[]
+  overriddenRegions?: Record<string, RegionEntry>
+}
+
+const countries = Object.entries(EMBEDDED_COMPLIANCE_MAP.countries) as Array<[string, CountryEntry]>
+const totalCountries = countries.length
+const totalLocales = Object.keys(LOCALES).length
+
+function lawList(compliance: readonly string[]): string {
+  return compliance.length ? compliance.map(c => c.toUpperCase()).join(', ') : '—'
+}
+
+const countryRows: SortableTableRow[] = countries.map(([code, entry]) => ({
+  id: code,
+  country: entry.name,
+  code,
+  regulations: lawList(entry.compliance),
+  locales: entry.locales.join(', '),
+  complianceGroup: entry.complianceGroup,
+}))
+
+const overrideRows: SortableTableRow[] = countries.flatMap(([countryCode, entry]) => {
+  if (!entry.overriddenRegions) return []
+  return Object.entries(entry.overriddenRegions).map(([regionCode, region]) => ({
+    id: `${countryCode}-${regionCode}`,
+    country: entry.name,
+    region: region.name,
+    code: regionCode,
+    complianceGroup: region.complianceGroup,
+    note: region.requiresSensitiveOptIn
+      ? `${region.description} — sensitive data requires opt-in`
+      : region.description,
+  }))
+})
+
+const COUNTRY_TABLE_COLUMNS = [
+  { key: 'country', label: 'Country / territory' },
+  { key: 'code', label: 'Code', mono: true },
+  { key: 'regulations', label: 'Regulation(s)' },
+  { key: 'locales', label: 'Locale(s)', className: 'text-xs' },
+  { key: 'complianceGroup', label: 'Compliance group', mono: true },
+]
+
+const OVERRIDE_TABLE_COLUMNS = [
+  { key: 'country', label: 'Country' },
+  { key: 'region', label: 'Region' },
+  { key: 'code', label: 'Code', mono: true },
+  { key: 'complianceGroup', label: 'Compliance group', mono: true },
+  { key: 'note', label: 'Note', className: 'text-xs' },
+]
+
+const TIER_DEFINITIONS: Array<{ tier: ComplianceTier; description: string }> = [
+  {
+    tier: 'maintained',
+    description: 'Actively tracked as the law changes — the highest-confidence tier.',
+  },
+  {
+    tier: 'supported',
+    description: 'Code is complete and stable, but not tracked as closely as the maintained tier (no currency claim on recent legal changes).',
+  },
+  {
+    tier: 'in-development',
+    description: 'Supported today; encoding or rollout is still being finished (e.g. a phased legal rollout still landing).',
+  },
+  {
+    tier: 'partial',
+    description: 'A specific, named gap exists — spec-correct binary encoding needing an optional peer dependency, parental verification needing your own backend, etc. Each regulation’s own guide states the exact gap.',
+  },
+  {
+    tier: 'routing-only',
+    description: 'UX-template routing only — the country resolves to a compliance group so the banner behaves sensibly, but the regulation itself isn’t individually legal-maintained. Covers PIPL and 190+ other countries/territories not named below.',
+  },
+]
+
+const REGULATION_TIERS: Array<{ label: string; tier: ComplianceTier; href: string }> = [
+  { label: 'GDPR', tier: 'maintained', href: '/docs/compliance/gdpr' },
+  { label: 'UK GDPR', tier: 'maintained', href: '/docs/compliance/uk-gdpr' },
+  { label: 'CCPA', tier: 'maintained', href: '/docs/compliance/ccpa' },
+  { label: 'CPRA', tier: 'maintained', href: '/docs/compliance/cpra' },
+  { label: 'LGPD', tier: 'maintained', href: '/docs/compliance/lgpd' },
+  { label: 'DPDPA (India)', tier: 'in-development', href: '/docs/compliance/dpdpa' },
+  { label: 'PIPEDA / Law 25 (Canada)', tier: 'supported', href: '/docs/compliance/pipeda' },
+  { label: 'POPIA (South Africa)', tier: 'supported', href: '/docs/compliance/popia' },
+  { label: 'PDPA (Thailand)', tier: 'supported', href: '/docs/compliance/pdpa-th' },
+  { label: 'APPI (Japan)', tier: 'supported', href: '/docs/compliance/appi' },
+  { label: 'KVKK (Turkey)', tier: 'supported', href: '/docs/compliance/kvkk' },
+  { label: 'COPPA (USA children)', tier: 'partial', href: '/docs/compliance/coppa' },
+  { label: 'TCF v2.3 / GPP (IAB, programmatic ads)', tier: 'partial', href: '/docs/compliance/tcf-and-gpp-registration' },
+  { label: 'PIPL (China)', tier: 'routing-only', href: '/docs/compliance/pipl' },
+]
+
+function TierPill({ tier }: { tier: ComplianceTier }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium border rounded-full px-2.5 py-1 font-mono text-pre ${COMPLIANCE_TIER_STYLES[tier]}`}>
+      {COMPLIANCE_TIER_LABELS[tier]}
+    </span>
+  )
+}
+
+export default function JurisdictionCoverageMapPage() {
+  return (
+    <div className="prose max-w-none">
+      <h1>Jurisdiction Coverage Map</h1>
+      <p>
+        Consenti ships an embedded map of{' '}
+        <strong>{totalCountries} countries and territories</strong>, each pre-assigned to one of the
+        8 built-in <strong>compliance groups</strong> — the model that decides opt-in vs. opt-out
+        behaviour, GPC handling, and legitimate-interest rules. It's the reference for the{' '}
+        <code>type</code> field in <a href="/docs/ui/advanced-configuration#compliance">UI</a> /{' '}
+        <a href="/docs/api/advanced-configuration#compliance">Backend</a> configuration, and for
+        the <code>compliance</code> array shown on every{' '}
+        <a href="/docs/compliance/gdpr">compliance guide</a>.
+      </p>
+
+      <Callout type="info">
+        The 8 groups and the map below are convenience defaults, tuned for the most common
+        regulatory shapes so most sites never need to touch them. They're not a ceiling: any site
+        can author its own profile — banner copy, categories, GPC handling, everything — against a{' '}
+        <a href="#custom-compliance-groups">custom compliance group</a> (see item 9 below) and route
+        to it explicitly with <code>compliance.type</code>, no built-in group required. See the{' '}
+        <a href="/guides/backend/geo-routing">Geo-Routing &amp; Auto-Detection guide</a> for how
+        country resolution feeds into this map.
+      </Callout>
+
+      <h2 id="compliance-tiers">Compliance Tiers</h2>
+      <p>
+        Every named regulation guide carries a status badge — <strong>Maintained</strong>,{' '}
+        <strong>Supported</strong>, <strong>In-development</strong>, <strong>Partial</strong>, or{' '}
+        <strong>Routing-only</strong>. The tier reflects how confidently Consenti tracks that
+        regulation's ongoing legal changes, not just whether the code exists. The Maintained and
+        Supported regulations are re-checked every quarter (see{' '}
+        <a href="/guides/what-is-consenti">how Consenti aims to stay compliant</a>); the most
+        recent review ran on <strong>8 October 2026</strong> (2026 Q4).
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Tier</th>
+            <th>Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          {TIER_DEFINITIONS.map(({ tier, description }) => (
+            <tr key={tier}>
+              <td><TierPill tier={tier} /></td>
+              <td>{description}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3>Regulation → tier</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Regulation</th>
+            <th>Tier</th>
+          </tr>
+        </thead>
+        <tbody>
+          {REGULATION_TIERS.map(({ label, tier, href }) => (
+            <tr key={label}>
+              <td><a href={href}>{label}</a></td>
+              <td><TierPill tier={tier} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p>
+        Every country not individually named above still resolves to a sensible compliance group
+        via the map below — that's the <strong>Routing-only</strong> tier in practice: UX-template
+        routing (opt-in / opt-out / notice-only behaviour) without per-country legal maintenance.
+      </p>
+
+      <hr />
+
+      <h2>Compliance Groups</h2>
+      <ol>
+        {COMPLIANCE_GROUP_IDS.map(groupId => {
+          const group = COMPLIANCE_GROUPS[groupId]
+          return (
+            <li key={groupId}>
+              <strong>{group.label}</strong> — <code>{groupId}</code>
+              <p>{group.description}</p>
+            </li>
+          )
+        })}
+        <li id="custom-compliance-groups">
+          <strong>Custom compliance groups</strong>
+          <p>
+            The 8 groups above cover every country in the map, but a profile is not limited to them.
+            Every profile has an optional <code>customComplianceGroup</code> field — a free-form,
+            lower-kebab-case string that stands in for <code>complianceGroup</code> when a site
+            needs a Compliance Group that doesn't map to any built-in group (a bespoke internal policy,
+            a jurisdiction not yet in the map, an A/B test variant, etc.).
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Aspect</th>
+                <th>Behaviour</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Where it's set</td>
+                <td>
+                  Admin dashboard profile wizard, Step 1 — choose <strong>None / Custom</strong>{' '}
+                  instead of one of the 8 built-in radio options, then type the identifier. See the{' '}
+                  <a href="/docs/api/dashboard">Admin Dashboard</a> guide.
+                </td>
+              </tr>
+              <tr>
+                <td>How it's targeted</td>
+                <td>
+                  Set the widget's <code>compliance.type</code> to the same string. Consenti
+                  resolves it exactly like a built-in group, fetching whichever profile is active
+                  for that name.
+                </td>
+              </tr>
+              <tr>
+                <td>Requirement</td>
+                <td>
+                  <strong>API mode only</strong> (<code>api.enabled: true</code>). There is no
+                  pre-built/offline fallback for a custom group name — resolution throws if nothing
+                  is active for it server-side.
+                </td>
+              </tr>
+              <tr>
+                <td>Validation</td>
+                <td>
+                  None of the <code>COMPLIANCE_VALIDATION_RULES</code> (legal-basis requirements,
+                  GPC recommendations, CPRA categories) apply to a custom group — you own
+                  correctness.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <Callout type="tip">
+            A related but distinct mechanism: instead of a new custom group, you can also{' '}
+            <em>override</em> one of the 8 built-in groups everywhere it's resolved — geo-detected
+            or fixed — by registering a <code>ConsentiProfile</code> with a matching{' '}
+            <code>complianceGroup</code> (optionally <code>deepMerge: true</code> to patch instead
+            of replace). See{' '}
+            <a href="/docs/ui/advanced-profiles#complianceGroup-override">
+              Overriding a built-in compliance group
+            </a>
+            .
+          </Callout>
+        </li>
+      </ol>
+
+      <hr />
+
+      <h2>Jurisdiction Coverage Map</h2>
+      <p>
+        Click a column header to sort. The United Kingdom is listed as <code>UK</code>; geo
+        providers and browser locales report it as ISO <code>GB</code>, and Consenti treats the two
+        as the same country (in this map and in any <code>complianceMap</code> you supply).
+      </p>
+      <SortableTable columns={COUNTRY_TABLE_COLUMNS} rows={countryRows} defaultSortKey="country" />
+
+      <h3>Regional overrides</h3>
+      <p>
+        Some countries route sub-nationally instead of by country alone — most notably the United
+        States (state-level laws) and Canada (Quebec's Law 25). When a resolver returns a{' '}
+        <code>region</code>, Consenti checks this table before falling back to the country's base
+        group above.
+      </p>
+      <SortableTable
+        columns={OVERRIDE_TABLE_COLUMNS}
+        rows={overrideRows}
+        defaultSortKey="country"
+      />
+      <Callout type="info">
+        "Sensitive data requires opt-in" (Colorado) is a per-region carve-out, not a different
+        compliance group — cookies tagged <code>cpraCategory: 'sensitive'</code> default to denied
+        for that region while the rest of the group's cookies still default to granted. Only takes
+        effect with a <code>geoDataProvider</code> that resolves a US state (<code>'geoip'</code>,{' '}
+        <code>'maxmind'</code>, or <code>'hosted-geoip-lite'</code>) — see{' '}
+        <a href="/docs/compliance/ccpa#colorados-sensitive-data-carve-out">the CCPA/CPRA guide</a>{' '}
+        for details.
+      </Callout>
+
+      <hr />
+
+      <h2>Supported locales</h2>
+      <p>
+        <strong>{totalLocales} locale codes</strong> appear across the map above (BCP 47, e.g.{' '}
+        <code>fr-CA</code>, <code>zh-CN</code>). A profile's <code>translations</code> map can use
+        any of these — or any locale at all; the map only reflects what each country typically
+        needs. Resolution order at runtime: exact locale match → language prefix →{' '}
+        <code>defaultLocale</code>.
+      </p>
+      <div className="not-prose flex flex-wrap gap-1.5">
+        {Object.keys(LOCALES)
+          .sort((a, b) => a.localeCompare(b))
+          .map(locale => (
+            <code
+              key={locale}
+              className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-800 text-slate-600 dark:text-gray-300"
+            >
+              {locale}
+            </code>
+          ))}
+      </div>
+    </div>
+  )
+}

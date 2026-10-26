@@ -699,7 +699,7 @@ export interface ConsentiConfig {
    * Applied before `profileOverride`, which still always applies last as the universal catch-all.
    * Works identically in standalone and server (`api.enabled`) mode. */
   complianceGroupsOverride?: Partial<Record<ComplianceGroupId | (string & {}), DeepPartial<ResolvedProfile>>>
-  /** When true, suppresses the "Powered by Consenti" footer link in the banner and modal. */
+  /** When true, suppresses the "Powered by Ijazat" footer link in the banner and modal. */
   hidePoweredBy?: boolean
 }
 

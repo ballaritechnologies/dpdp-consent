@@ -1,5 +1,10 @@
 # Product name: preliminary screen
 
+> **Decision (2026-10-26): the product is named Ijazat**, chosen by the owner from the shortlist below.
+> Applied to user-facing text: README, NOTICE, dashboard, widget "Powered by" badge, logo. Trademark
+> clearance (Q-A5) is still open; if the lawyer flags a problem, only those strings and the SVG logos
+> need changing. Package names, CSS classes and events keep the upstream `consenti` names.
+
 **Status:** preliminary knockout screen, 2026-10-26. **This is not a trademark clearance and not legal advice.** It is a web and package-registry search to drop obviously conflicting names before the lawyer runs a proper search. Open question Q-A5 in `docs/legal-open-questions.md` stays open until the lawyer answers.
 
 ## What we need from a name

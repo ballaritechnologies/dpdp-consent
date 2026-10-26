@@ -134,8 +134,8 @@ export function Login() {
         {hidePoweredBy || (
           <p class="mt-5 text-center text-[11px] text-gray-400">
             {t('layout.poweredBy')}{' '}
-            <a href="https://consenti.dev/?utm_source=dashboard&utm_medium=powered-by&utm_campaign=consenti-api" target="_blank" rel="noopener noreferrer" class="hover:text-blue-500 transition-colors">
-              Consenti
+            <a href="https://github.com/ballaritechnologies/dpdp-consent" target="_blank" rel="noopener noreferrer" class="hover:text-blue-500 transition-colors">
+              Ijazat
             </a>
           </p>
         )}

@@ -323,7 +323,7 @@ export interface BrandingConfig {
    * dist and served as a static asset automatically.
    */
   appLogoPath?: string
-  /** When true, hides the "Powered by Consenti" badge in the dashboard. Default: false. */
+  /** When true, hides the "Powered by Ijazat" badge in the dashboard. Default: false. */
   hidePoweredBy?: boolean
 }
 
@@ -906,7 +906,7 @@ export interface ConsentiRuntimeConfig {
   appName: string
   /** Resolved logo URL (relative path or absolute URL). Null when no logo is configured. */
   appLogoPath: string | null
-  /** Whether to show the "Powered by Consenti" badge. */
+  /** Whether to show the "Powered by Ijazat" badge. */
   hidePoweredBy: boolean
   /** URL prefix Consenti is mounted at — used by the dashboard to build API base URLs. */
   basePath: string

@@ -1,30 +1,14 @@
-<svg width="132" height="132" viewBox="0 0 132 132" xmlns="http://www.w3.org/2000/svg">
+<svg width="132" height="132" viewBox="0 0 132 132" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ijazat">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#2563EB"/>
-      <stop offset="100%" stop-color="#06B6D4"/>
-    </linearGradient>
-
-    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#22C55E"/>
       <stop offset="100%" stop-color="#06B6D4"/>
     </linearGradient>
+    <linearGradient id="tick" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
   </defs>
-
-  <!-- Logo Symbol -->
-  <g>
-    <!-- Outer C -->
-    <path
-      d="M65 10 A55 55 0 1 0 65 120 L82 102 A30 30 0 1 1 82 28 Z"
-      fill="url(#grad2)"/>
-
-    <!-- Check -->
-    <path
-      d="M42 63 L58 79 L92 42"
-      fill="none"
-      stroke="url(#grad)"
-      stroke-width="12"
-      stroke-linecap="round"
-      stroke-linejoin="round"/>
-  </g>
+  <circle cx="66" cy="66" r="50" fill="none" stroke="url(#ring)" stroke-width="16"/>
+  <path d="M43 67 L59 83 L90 48" fill="none" stroke="url(#tick)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

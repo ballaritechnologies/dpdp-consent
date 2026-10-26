@@ -8,7 +8,7 @@ interface BrandingState {
   hidePoweredBy: boolean
 }
 
-const DEFAULTS: BrandingState = { appName: 'Consenti', appLogoPath: './logo-dark.svg', hidePoweredBy: false }
+const DEFAULTS: BrandingState = { appName: 'Ijazat', appLogoPath: './logo-dark.svg', hidePoweredBy: false }
 
 function readBranding(): BrandingState {
   const cfg = window.__CONSENTI_CONFIG__

@@ -46,7 +46,7 @@ export function buildConsentiRuntimeConfig(
   if (compliance.gpc !== undefined) resolvedCompliance.gpc = compliance.gpc
 
   return {
-    appName: branding.appName ?? 'Consenti',
+    appName: branding.appName ?? 'Ijazat',
     appLogoPath: branding?.appLogoPath ?? "/logo-dark.svg", // resolveappLogoPath(dashboardDir, branding),
     hidePoweredBy: branding.hidePoweredBy ?? false,
     basePath,

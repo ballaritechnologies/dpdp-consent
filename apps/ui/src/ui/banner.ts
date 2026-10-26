@@ -149,9 +149,9 @@ export class Banner {
     }
 
     const pb = document.createElement('a')
-    pb.href = 'https://consenti.dev/?utm_source=widget&utm_medium=powered-by&utm_campaign=consenti-ui'
+    pb.href = 'https://github.com/ballaritechnologies/dpdp-consent'
     pb.className = 'consenti__powered-by'
-    pb.textContent = 'Powered by Consenti ↗'
+    pb.textContent = 'Powered by Ijazat ↗'
     pb.setAttribute('target', '_blank')
     pb.setAttribute('rel', 'noopener noreferrer')
     if (hidePoweredBy) {

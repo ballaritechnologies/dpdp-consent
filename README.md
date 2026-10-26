@@ -1,11 +1,21 @@
-> **About this repository.** `dpdp-consent` is a fork of [Consenti](https://github.com/santoshe61/consenti)
-> (Apache 2.0, by its original author), maintained by Ballari Technologies Private Limited. We are
-> extending it into DPDP-first consent tooling (India's Digital Personal Data Protection Act) with GDPR
-> routing, built on Consenti. The text below is upstream's README and has not been rebranded yet.
-> See [NOTICE](./NOTICE) for attribution and [docs/audit.md](./docs/audit.md) for the current plan.
-> Nothing in this repository is legal advice.
+# Ijazat
 
-# Consenti
+**Open-source, DPDP-first consent tooling: built on [Consenti](https://github.com/santoshe61/consenti).**
+
+> Ijazat (इजाज़त, "permission") is maintained by Ballari Technologies Private Limited. It extends
+> Consenti (Apache 2.0) with India's Digital Personal Data Protection Act (DPDP) consent flows and
+> per-site DPDP / GDPR routing. See [NOTICE](./NOTICE) for attribution. **Nothing in this
+> repository is legal advice.** The product name is pending trademark clearance
+> ([docs/naming.md](./docs/naming.md)).
+>
+> Package names (`@consenti/*`), CSS classes (`.consenti-*`) and events (`consenti:*`) keep their
+> upstream names so upstream fixes can still be merged.
+
+---
+
+## Upstream README
+
+### Consenti
 
 Open-source, GDPR-style opt-in Cookie Consent + Consent Management Platform toolkit.
 

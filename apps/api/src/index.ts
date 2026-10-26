@@ -325,7 +325,7 @@ const DEFAULT_CONFIG: ConsentiServerConfig = {
   },
   branding: {
     appLogoPath: "./logo-dark.svg",
-    appName: "Consenti",
+    appName: "Ijazat",
     hidePoweredBy: false,
   }
 }

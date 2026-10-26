@@ -221,8 +221,8 @@ export function Sidebar({ current, collapsed, onToggle: _onToggle }: Props) {
             {!hidePoweredBy && (
               <p class="text-[10px] text-gray-600 mt-2">
                 {t('layout.poweredBy')}{' '}
-                <a href="https://consenti.dev/?utm_source=dashboard&utm_medium=powered-by&utm_campaign=consenti-api" target="_blank" rel="noopener noreferrer" class="hover:text-gray-400 transition-colors">
-                  Consenti
+                <a href="https://github.com/ballaritechnologies/dpdp-consent" target="_blank" rel="noopener noreferrer" class="hover:text-gray-400 transition-colors">
+                  Ijazat
                 </a>
               </p>
             )}

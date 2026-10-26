@@ -23,6 +23,7 @@
  */
 
 import type { PreferenceModal, Category, CategoryMap, CookieMap, ConsentValue, ConsentStatus, Button, DpdpaConfig } from '../types'
+import { labelLocaleOption } from './locale-name'
 import { buildDpdpNotice } from '../dpdp/notice'
 import type { ButtonClickHandler } from './buttons'
 import { buildButton } from './buttons'
@@ -649,7 +650,7 @@ function buildModalLocaleSwitcher(
     const localeBtn = document.createElement('button')
     localeBtn.type = 'button'
     localeBtn.className = `consenti-locale-switcher__option${locale === activeLocale ? ' consenti-locale-switcher__option--active' : ''}`
-    localeBtn.textContent = locale
+    labelLocaleOption(localeBtn, locale)
     localeBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       list.hidden = true

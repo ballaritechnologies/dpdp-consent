@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- Test fixture for the DPDP checker: a site with deliberate gaps. Not a real site. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gappy Store</title>
+<style>
+  body { font-family: system-ui; margin: 0; padding: 24px; }
+  body.locked { overflow: hidden; }
+  .cookie-banner { position: fixed; inset: auto 0 0 0; background: #fff; border-top: 1px solid #ccc; padding: 16px; }
+  .cookie-banner-panel { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #ccc; padding: 16px; }
+  .shade { position: fixed; inset: 0; background: rgba(0,0,0,.5); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main><h1>Gappy Store</h1><p>Products and prices.</p></main>
+<div class="shade" id="shade" hidden></div>
+<div class="cookie-banner" id="banner" hidden>
+  <p>We use cookies to improve your experience.</p>
+  <button type="button" id="accept">Accept all</button>
+  <button type="button" id="settings">Cookie settings</button>
+</div>
+<div class="cookie-banner-panel" role="dialog" id="panel" hidden>
+  <p><input type="checkbox" id="c-necessary" checked disabled><label for="c-necessary">Strictly necessary</label></p>
+  <p><input type="checkbox" id="c-analytics" checked><label for="c-analytics">Analytics</label></p>
+  <p><input type="checkbox" id="c-ads" checked disabled><label for="c-ads">Advertising</label></p>
+  <button type="button" id="save">Save preferences</button>
+</div>
+<script>
+  // Gap: trackers set on page load, before (and regardless of) any choice.
+  document.cookie = '_ga=GA1.1.123.456; path=/'
+  document.cookie = '_fbp=fb.1.123.456; path=/'
+  const decided = localStorage.getItem('consent')
+  const banner = document.getElementById('banner')
+  const shade = document.getElementById('shade')
+  function close() {
+    banner.hidden = true; shade.hidden = true; document.getElementById('panel').hidden = true
+    document.body.classList.remove('locked')
+  }
+  if (!decided) { banner.hidden = false; shade.hidden = false; document.body.classList.add('locked') }
+  document.getElementById('accept').onclick = () => { localStorage.setItem('consent', 'all'); close() }
+  document.getElementById('settings').onclick = () => { document.getElementById('panel').hidden = false }
+  document.getElementById('save').onclick = () => { localStorage.setItem('consent', 'custom'); close() }
+</script>
+</body>
+</html>

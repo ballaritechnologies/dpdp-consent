@@ -11,6 +11,8 @@ export const ACCEPT_ALL_LABELS: string[] = [
   'alles akzeptieren', 'accetta tutto', 'aceitar tudo', 'aceitar todos',
   'すべて同意', 'すべてを許可', '全て同意', '全て許可', '全部同意', '全部接受', '接受全部',
   '전체 동의', '모두 동의', 'принять все', 'kabul et', 'tümünü kabul et',
+  // Indian languages — full phrases only: "स्वीकार करें" alone is a substring of "अस्वीकार करें" (reject).
+  'सभी स्वीकार करें', 'सब स्वीकार करें', 'ಎಲ್ಲವನ್ನೂ ಸ್ವೀಕರಿಸಿ', 'అన్నింటినీ అంగీకరించండి', 'அனைத்தையும் ஏற்கவும்',
 ]
 
 export const REJECT_ALL_LABELS: string[] = [
@@ -20,6 +22,7 @@ export const REJECT_ALL_LABELS: string[] = [
   'ablehnen', 'rifiuta tutto', 'rejeitar tudo', 'recusar tudo',
   'すべて拒否', '全て拒否', '全部拒绝', '拒绝全部',
   '전체 거부', '모두 거부', 'отклонить все', 'reddet', 'tümünü reddet',
+  'सभी अस्वीकार करें', 'सब अस्वीकार करें', 'ಎಲ್ಲವನ್ನೂ ನಿರಾಕರಿಸಿ', 'అన్నింటినీ తిరస్కరించండి', 'அனைத்தையும் நிராகரிக்கவும்',
 ]
 
 /** Labels for the button that opens a CMP's granular preference/customize panel — the third
@@ -33,6 +36,8 @@ export const MANAGE_PREFERENCES_LABELS: string[] = [
   'einstellungen', 'cookie-einstellungen', 'anpassen',
   'impostazioni cookie', 'personalizza',
   'configurações de cookies', 'personalizar cookies',
+  'choose purposes', 'privacy choices',
+  'उद्देश्य चुनें', 'ಉದ್ದೇಶಗಳನ್ನು ಆಯ್ಕೆಮಾಡಿ', 'ప్రయోజనాలను ఎంచుకోండి', 'நோக்கங்களைத் தேர்வுசெய்யவும்',
 ]
 
 /** Labels for the button that submits/confirms whatever was toggled in a preference panel.
@@ -47,6 +52,7 @@ export const SAVE_PREFERENCES_LABELS: string[] = [
   'einstellungen speichern', 'auswahl speichern',
   'salva le preferenze', 'conferma le scelte',
   'salvar preferências', 'confirmar escolhas',
+  'मेरे विकल्प सहेजें', 'ನನ್ನ ಆಯ್ಕೆಗಳನ್ನು ಉಳಿಸಿ', 'నా ఎంపికలను సేవ్ చేయండి', 'என் தேர்வுகளைச் சேமிக்கவும்',
 ]
 
 /** Multi-locale substring keywords used by the generic banner fallback (`findGenericBannerFallback`
@@ -65,6 +71,7 @@ export const BANNER_KEYWORDS: string[] = [
   'クッキー', 'プライバシー', '同意',
   '쿠키', '개인정보', '동의',
   '隐私', '同意', 'cookie 政策',
+  'personal data', 'dpdp', 'सहमति', 'ಸಮ್ಮತಿ', 'సమ్మతి', 'ஒப்புதல்',
 ]
 
 /** Common banner/modal container selectors this heuristic searches within, before falling back

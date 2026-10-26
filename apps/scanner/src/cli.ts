@@ -7,11 +7,12 @@ import { generateScanId } from './scan-id.js'
 import { scanDirPath } from './scan-dir.js'
 import { Spinner } from './spinner.js'
 import { DEFAULT_SCAN_OPTIONS, type ScanOptions } from './types.js'
+import { runDpdpCheck, writeDpdpReport, type DpdpCheckOptions } from './dpdp/run.js'
 
 interface ParsedArgs {
   command: string | null
   url: string | null
-  options: ScanOptions
+  options: DpdpCheckOptions
   verbose: boolean
 }
 
@@ -21,7 +22,7 @@ interface ParsedArgs {
 function parseArgs(argv: string[]): ParsedArgs {
   const command = argv[0] ?? null
   const url = argv[1] && !argv[1].startsWith('--') ? argv[1] : null
-  const options: ScanOptions = { ...DEFAULT_SCAN_OPTIONS }
+  const options: DpdpCheckOptions = { ...DEFAULT_SCAN_OPTIONS }
   let verbose = false
 
   let i = url ? 2 : 1
@@ -64,6 +65,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       case '--crawl-delay':
         options.crawlDelaySeconds = Number(takeValue())
         break
+      case '--probe-pages':
+        options.dpdpProbePages = Number(takeValue())
+        break
       default:
         // Unrecognized flag — ignored rather than rejected (see comment above).
         break
@@ -79,7 +83,9 @@ function printUsage(): void {
 @consenti/scanner — local, offline tracker discovery under three consent states
 
 Usage:
-  npx @consenti/scanner scan <url> [options]
+  npx @consenti/scanner scan <url> [options]   tracker scan under three consent states
+  npx @consenti/scanner dpdp <url> [options]   DPDP consent checker: the scan above plus DPDP
+                                                checks, written as a gap report (JSON + HTML)
 
 Options:
   --depth <n>        Link-crawl depth in hops from the start URL (default: ${DEFAULT_SCAN_OPTIONS.depth})
@@ -104,7 +110,10 @@ Options:
                      wait per navigation; a set value jitters ±2.0s around it, re-rolled every
                      navigation (named after robots.txt's own Crawl-delay directive)
 
+  --probe-pages <n>  dpdp only: how many scanned pages get the DPDP probes (default: 3)
+
 Before first use: npx @consenti/scanner install-browsers   (installs Playwright's Chromium)
+Everything runs on this machine; nothing is uploaded. Reports are not legal advice.
 
 Exits non-zero when the report has unclassified trackers or anything firing before consent —
 usable as a CI/CD gate.
@@ -114,9 +123,9 @@ usable as a CI/CD gate.
 async function main(): Promise<void> {
   const { command, url, options, verbose } = parseArgs(process.argv.slice(2))
 
-  if (command !== 'scan' || !url) {
+  if ((command !== 'scan' && command !== 'dpdp') || !url) {
     printUsage()
-    process.exitCode = command === 'scan' ? 1 : 0
+    process.exitCode = command === 'scan' || command === 'dpdp' ? 1 : 0
     return
   }
 
@@ -169,6 +178,28 @@ async function main(): Promise<void> {
     }
   }
 
+  if (command === 'dpdp') {
+    const { scan, report: dpdp } = await runDpdpCheck(url, options, onProgress, { scanId, signal: controller.signal })
+    process.off('SIGINT', onSigint)
+    if (!verbose) spinner.stop()
+    await writeReport(scan, options.outputDir)
+    await writeHtmlReport(scan, options.outputDir)
+    const { jsonPath, htmlPath } = await writeDpdpReport(dpdp, options.outputDir)
+    console.log(`\nPages scanned: ${scan.pagesScanned.length}; DPDP checks on ${dpdp.pagesChecked.length}`)
+    for (const check of dpdp.checks) {
+      const mark = check.result === 'gaps-found' ? color.red('gaps found') : check.result === 'no-gaps-found' ? color.green('no gaps found') : color.gray('not checked')
+      console.log(`  ${check.title}: ${mark}${check.note ? color.gray(` (${check.note})`) : ''}`)
+    }
+    for (const gap of dpdp.gaps) console.log(`  - [${gap.severity}] ${gap.title}`)
+    console.log(`\nDPDP gap report (JSON): ${jsonPath}`)
+    console.log(`DPDP gap report (HTML): ${htmlPath}`)
+    console.log(color.gray(`\n${dpdp.disclaimer}`))
+    if (dpdp.partial) console.log(color.yellow('\nResult: STOPPED — partial check, stopped early by user.'))
+    else console.log(dpdp.gapsFound > 0 ? color.red(`\nResult: ${dpdp.gapsFound} gap(s) found`) : color.green('\nResult: no gaps found by the automated checks'))
+    process.exitCode = dpdp.gapsFound > 0 || dpdp.partial ? 1 : 0
+    return
+  }
+
   const report = await runScan(url, options, onProgress, { scanId, signal: controller.signal })
   process.off('SIGINT', onSigint)
   if (!verbose) spinner.stop()
@@ -194,7 +225,7 @@ async function main(): Promise<void> {
   if (report.summary.pagesWithBlockingSuspicion > 0) {
     console.log(
       color.yellow(
-        `\n⚠ ${report.summary.pagesWithBlockingSuspicion} page(s) show signs of a CDN/WAF block or rate-limit mid-scan — those results may be incomplete, not necessarily a compliance gap. See each page's blockingSuspicion in the report. Try --crawl-delay to slow down and reduce this.`
+        `\n⚠ ${report.summary.pagesWithBlockingSuspicion} page(s) show signs of a CDN/WAF block or rate-limit mid-scan — those results may be incomplete, not necessarily a gap. See each page's blockingSuspicion in the report. Try --crawl-delay to slow down and reduce this.`
       )
     )
   }

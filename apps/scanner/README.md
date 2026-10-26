@@ -37,6 +37,48 @@ Exits non-zero when the report has unclassified trackers or anything firing befo
 when the scan was stopped early (Ctrl+C — see "Stopping a scan early" below) — usable as a CI/CD
 gate (`npx consenti-scanner scan ... || exit 1`).
 
+## DPDP consent checker
+
+```
+npx consenti-scanner dpdp https://example.com --depth 1 --probe-pages 3
+```
+
+Runs the regular three-state scan above, then DPDP-specific probes on the first `--probe-pages`
+scanned pages (three page loads each: as first shown, after "Accept all" + reload, after "Reject
+all"), and writes a **gap report** next to the scan report: `dpdp-report.json` and
+`dpdp-report.html` in `<output-dir>/<scan-id>/`.
+
+| Check | What counts as a gap | Severity |
+|---|---|---|
+| A consent notice is shown | no banner found at all | high |
+| No tracking before the visitor chooses | analytics, advertising or fingerprinting seen before any choice (unidentified third parties are listed as *low*) | high |
+| No tracking after "Reject all" | the same, after the probe actually clicked "Reject all" (*not checked* when there is no such button) | high |
+| Consent is not pre-ticked or bundled | optional toggles start on; optional-looking purposes locked on; only "Accept" offered (*high*); refusing needs more steps than accepting (*medium*) | high / medium |
+| Consent can be withdrawn later | after accepting and reloading, no "Privacy choices" / "Cookie settings"-style control and no known CMP reopen button | medium |
+| A grievance contact is given | no grievance officer/contact in the notice or on the page (*medium*), or only off the notice (*low*) | medium / low |
+| The notice is offered in an Indian language | no Indian-script notice text, language option, `lang` or `hreflang` for an Indian language | medium |
+| The site works without optional consent | page locked while a notice with no reject option is open; notice still shown or page still locked after "Reject all"; "accept to continue" text | high |
+
+Each gap has what was seen, the pages, the evidence, and a plain-English fix. Every check reports
+**gaps found**, **no gaps found** or **not checked** (with the reason). The report never says a
+site is or isn't lawful: it lists gaps the automated checks found, which may miss things, and it
+is not legal advice. The CLI exits non-zero when gaps are found (usable as a CI gate).
+
+**Nothing leaves your machine**: the only network traffic is the crawl of the site itself. The
+heuristics (labels, selectors, language names) are plain data in `src/dpdp/signals.ts`.
+
+Programmatic use:
+
+```ts
+import { runDpdpCheck, writeDpdpReport, DEFAULT_SCAN_OPTIONS } from '@consenti/scanner'
+
+const { report } = await runDpdpCheck('https://example.com', { ...DEFAULT_SCAN_OPTIONS, dpdpProbePages: 2 })
+console.log(report.gapsFound, report.gaps.map(g => g.title))
+await writeDpdpReport(report, './scan-results')
+```
+
+`evaluateDpdp(scanReport, probes)` is the pure rule engine, if you want to feed it your own data.
+
 ## Bypassing bot-averse CMPs and checking GPC behavior
 
 `--skip-user-agent-checks` is the fix for the "known limitation" above where a site's CMP treats

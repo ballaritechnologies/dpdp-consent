@@ -235,6 +235,23 @@ describe('DPDP flow in the browser', () => {
     })
   }
 
+  test('the banner language switcher names Indian languages natively and switches to them', async () => {
+    const page = await open('en')
+    try {
+      const hindi = page.locator('#consenti-banner .consenti-locale-switcher__option[data-locale="hi"]')
+      assert.equal(await hindi.getAttribute('lang'), 'hi')
+      assert.equal((await hindi.textContent())?.trim(), 'हिन्दी')
+      assert.equal((await page.textContent('#consenti-banner .consenti-locale-switcher__option[data-locale="ta"]'))?.trim(), 'தமிழ்')
+      await page.click('#consenti-banner .consenti-locale-switcher__btn')
+      await hindi.click()
+      await page.waitForFunction(() => document.querySelector('.consenti-root')?.getAttribute('lang') === 'hi')
+      const tx = withLocaleOverlays('opt-in-dpdpa')!.translations['hi']!
+      await page.waitForFunction((h) => document.querySelector('#consenti-banner-heading')?.textContent?.trim() === h, tx.mainBanner.heading)
+    } finally {
+      await page.close()
+    }
+  })
+
   test('nothing is pre-ticked, even when a profile tries to pre-grant a purpose', async () => {
     const page = await open('en', { cookies: { analytics_storage: { preGrant: true } } })
     try {

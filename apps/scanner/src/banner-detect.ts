@@ -465,3 +465,31 @@ export async function clickBannerButtonByExactText(page: Page, text: string): Pr
     return false
   }
 }
+
+/** Visible text of whichever banner/panel container is showing (known CMP selectors first, then
+ * the generic-fallback marker) — empty when none is. Used by the DPDP checks to look for a
+ * grievance contact and Indian-language text inside the notice itself. */
+export async function visibleBannerText(page: Page): Promise<string> {
+  const selector = (await firstVisibleContainer(page, 500)) ?? FALLBACK_MARKER_SELECTOR
+  const container = page.locator(selector).first()
+  if (!(await container.isVisible().catch(() => false))) return ''
+  return (await container.innerText({ timeout: 1_000 }).catch(() => '')).trim()
+}
+
+/** Like {@link listPreferenceCategories}, plus each toggle's state as the panel first opened —
+ * an optional category that starts switched on is a pre-ticked box. */
+export async function listPreferenceCategoryStates(page: Page): Promise<Array<PreferenceCategory & { initiallyOn: boolean }>> {
+  await revealHiddenSections(page)
+  const scope = await findToggleScope(page)
+  const toggles = scope.locator(TOGGLE_SELECTOR)
+  const count = await toggles.count().catch(() => 0)
+  const categories: Array<PreferenceCategory & { initiallyOn: boolean }> = []
+  for (let i = 0; i < count; i++) {
+    const toggle = toggles.nth(i)
+    if (!(await toggle.isVisible().catch(() => false))) continue
+    const label = await labelFor(toggle)
+    if (!label) continue
+    categories.push({ label, locked: await isLocked(toggle), initiallyOn: await toggleIsOn(toggle) })
+  }
+  return categories
+}

@@ -14,7 +14,10 @@ export interface BrowserSession {
 
 export async function launchSession(url: string, options: SessionOptions = {}): Promise<BrowserSession> {
   const handleProcessSignals = options.handleProcessSignals ?? true
+  // CHROMIUM_PATH: use an already-installed Chromium/Chrome instead of Playwright's own download.
+  const executablePath = process.env['CHROMIUM_PATH']
   const browser = await chromium.launch({
+    ...(executablePath ? { executablePath } : {}),
     headless: options.headless ?? true,
     handleSIGINT: handleProcessSignals,
     handleSIGTERM: handleProcessSignals,

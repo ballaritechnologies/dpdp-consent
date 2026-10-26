@@ -56,3 +56,12 @@ export type {
   SuggestedUiTemplate,
   SuggestedSetup,
 } from './suggest.js'
+
+// DPDP consent checker
+export { runDpdpCheck, writeDpdpReport } from './dpdp/run.js'
+export type { DpdpCheckOptions, DpdpCheckResultBundle } from './dpdp/run.js'
+export { evaluateDpdp, DPDP_CHECK_TITLES, DPDP_DISCLAIMER } from './dpdp/checks.js'
+export { renderDpdpHtml } from './dpdp/html.js'
+export { probeDpdpPage } from './dpdp/probe.js'
+export type { DpdpPageProbe, DpdpGap, DpdpReport, DpdpCheckId, DpdpCheckResult, DpdpSeverity } from './dpdp/types.js'
+export { visibleBannerText, listPreferenceCategoryStates } from './banner-detect.js'

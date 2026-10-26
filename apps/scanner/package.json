@@ -2,7 +2,7 @@
   "name": "@consenti/scanner",
   "private": true,
   "version": "0.1.0",
-  "description": "Local CLI that crawls a site under three consent states (none / reject-all / accept-all) and reports undeclared third-party trackers, with confidence-scored classification. Fully offline — no account, no server, no network calls except the crawl itself.",
+  "description": "Local CLI that crawls a site under three consent states (none / reject-all / accept-all) and reports undeclared third-party trackers, with confidence-scored classification. Fully offline \u2014 no account, no server, no network calls except the crawl itself.",
   "license": "Apache-2.0",
   "type": "module",
   "types": "./dist/index.d.ts",
@@ -25,7 +25,8 @@
     "watch": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "install-browsers": "playwright install chromium",
-    "scan": "node dist/cli.js"
+    "scan": "node dist/cli.js",
+    "test": "tsx --test src/__tests__/*.integration.ts"
   },
   "dependencies": {
     "playwright": "^1.62.1"

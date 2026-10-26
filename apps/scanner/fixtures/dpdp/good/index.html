@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<!-- Test fixture for the DPDP checker: a site that should show no gaps. Not a real site. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Good Store</title>
+<link rel="alternate" hreflang="hi" href="/?lang=hi">
+<style>
+  body { font-family: system-ui; margin: 0; padding: 24px; }
+  .cookie-banner { position: fixed; inset: auto 0 0 0; background: #fff; border-top: 1px solid #ccc; padding: 16px; }
+  .cookie-banner-panel { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #ccc; padding: 16px; }
+  #reopen { position: fixed; left: 16px; bottom: 16px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main><h1>Good Store</h1><p>Products and prices.</p></main>
+<div class="cookie-banner" id="banner" hidden>
+  <p>We would like your consent to use personal data for these separate purposes: analytics, advertising.
+     Grievance Officer: R. Sharma, grievance@good.example.</p>
+  <label for="lang">Language</label>
+  <select id="lang"><option value="en">English</option><option value="hi">हिन्दी</option></select>
+  <button type="button" id="accept">Accept all</button>
+  <button type="button" id="reject">Reject all</button>
+  <button type="button" id="choose">Choose purposes</button>
+</div>
+<div class="cookie-banner-panel" role="dialog" id="panel" hidden>
+  <p><input type="checkbox" id="p-necessary" checked disabled><label for="p-necessary">Essential</label></p>
+  <p><input type="checkbox" id="p-analytics"><label for="p-analytics">Analytics</label></p>
+  <p><input type="checkbox" id="p-ads"><label for="p-ads">Advertising</label></p>
+  <button type="button" id="save">Save my choices</button>
+</div>
+<button type="button" id="reopen" hidden>Privacy choices</button>
+<script>
+  const banner = document.getElementById('banner')
+  const panel = document.getElementById('panel')
+  const reopen = document.getElementById('reopen')
+  function applyConsent(c) {
+    if (c && c.analytics) document.cookie = '_ga=GA1.1.123.456; path=/'
+    if (c && c.ads) document.cookie = '_fbp=fb.1.123.456; path=/'
+  }
+  function decide(c) {
+    localStorage.setItem('consent', JSON.stringify(c))
+    banner.hidden = true; panel.hidden = true; reopen.hidden = false
+    applyConsent(c)
+  }
+  const stored = localStorage.getItem('consent')
+  if (stored) { applyConsent(JSON.parse(stored)); reopen.hidden = false } else { banner.hidden = false }
+  document.getElementById('accept').onclick = () => decide({ analytics: true, ads: true })
+  document.getElementById('reject').onclick = () => decide({ analytics: false, ads: false })
+  document.getElementById('choose').onclick = () => { panel.hidden = false }
+  document.getElementById('save').onclick = () => decide({
+    analytics: document.getElementById('p-analytics').checked,
+    ads: document.getElementById('p-ads').checked,
+  })
+  reopen.onclick = () => { panel.hidden = false }
+</script>
+</body>
+</html>

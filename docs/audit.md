@@ -1,10 +1,10 @@
 # Phase 0 Audit: Consenti as the base for the DPDP + GDPR platform
 
 **Status:** read-only audit. No code was changed.
-**Audited source:** `github.com/santoshe61/consenti`, `main` at commit `afeded4c02fafcd08430631507fa153fdbd0aa15` (2026-10-15), root version `0.6.0`.
+**Audited source:** `github.com/santoshe61/consenti`, `master` at commit `afeded4c02fafcd08430631507fa153fdbd0aa15` (2026-10-15), root version `0.6.0`.
 **Date:** 2026-10-26
 
-> **Repo state.** `ballaritechnologies/dpdp-consent` holds only a one-line README. The Consenti code has **not** been imported yet, so this audit read a fresh upstream clone. Step 0 of the work order (section 7) imports it.
+> **Repo state.** When this audit was written the repo held only a one-line README, so it read a fresh upstream clone. Upstream has since been merged into this repo at the same commit (step 0 of section 6.3), so the file paths below apply here directly.
 
 > **Not verified at runtime.** The sandbox would not run `npm ci`, so typecheck and the existing tests were **not** run against upstream. Everything below comes from reading the source. Running `npm ci && npx turbo typecheck && npx turbo test` is the first job after the import, to get a baseline.
 
@@ -211,7 +211,7 @@ Gaps found:
 
 0. **Import the fork (prerequisite, needs your go-ahead).**
    - Add `upstream` = `santoshe61/consenti`.
-   - Merge `upstream/main` into this repo's `main`, with `--allow-unrelated-histories` to keep upstream history and attribution.
+   - Merge `upstream/master` into this repo's `main`, with `--allow-unrelated-histories` to keep upstream history and attribution.
    - Add `NOTICE`, keeping LICENSE and headers.
    - Run the baseline `npm ci`, `turbo typecheck` and `turbo test`.
    - Do the compliance-wording sweep (R2) and the README rebrand stub as separate small commits.

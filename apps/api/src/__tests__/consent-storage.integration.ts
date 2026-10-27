@@ -104,6 +104,45 @@ for (const [name, make] of DRIVERS) describe(`consent records (${name})`, () => 
     assert.equal(await s.getVisitor(v), null)
   })
 
+  test('deleting a site removes everything stored for it, and nothing of other sites', async () => {
+    const site = (await s.createTenant({ name: 'Doomed', slug: `doomed-${run}` })).id
+    const v = `${run}-doomed`
+    const keep = `${run}-keep`
+    for (const [tenantId, visitorId] of [[site, v], ['default', keep]] as const) {
+      visitors.push(visitorId)
+      await s.createConsent({ tenantId, visitorId, profileId: 'prof_a', locale: 'en', consentJson: { a: 'granted' }, gpcDetected: false, source: 'banner' })
+      await s.updateConsent(visitorId, { consentJson: { a: 'denied' } }, tenantId)
+      await s.createVisitor({ tenantId, visitorId })
+      await s.createNoticeShown({ tenantId, visitorId, profileId: 'prof_a', locale: 'en' })
+      await s.putEntity({ id: `rcpt-${visitorId}`, tenantId, collection: 'consent_receipt', ref: visitorId, status: 'given', dueAt: null, createdAt: '2026-10-27T00:00:00.000Z', updatedAt: '2026-10-27T00:00:00.000Z', data: {} })
+      await s.createLog({ tenantId, action: 'test.marker', resourceType: 'test', resourceId: visitorId })
+    }
+    await s.createApiKey({ tenantId: site, name: 'k', keyHash: `hash-${run}`, createdBy: 'test' })
+    await s.createConsentTemplate({ tenantId: site, name: 't', cookies: {}, categories: {} })
+    await s.updateSettings(site, { setupCompleted: true })
+
+    await s.deleteTenant(site)
+
+    assert.equal((await s.getTenants()).some(t => t.id === site), false)
+    assert.equal(await s.getConsent(v), null)
+    assert.deepEqual(await s.getConsentHistory(v), [])
+    assert.equal(await s.getVisitor(v), null)
+    assert.deepEqual(await s.getNoticeShownForVisitor(v), [])
+    assert.equal(await s.countEntities({ tenantId: site, collection: 'consent_receipt' }), 0)
+    assert.equal((await s.getLogs({ tenantId: site, page: 1, limit: 10 })).total, 0)
+    assert.deepEqual(await s.getApiKeys(site), [])
+    assert.deepEqual(await s.getConsentTemplates(site), [])
+    assert.notEqual((await s.getSettings(site)).setupCompleted, true)
+    // The default site is untouched.
+    assert.ok(await s.getConsent(keep))
+    assert.equal((await s.getConsentHistory(keep)).length, 2)
+    assert.ok(await s.getVisitor(keep))
+    assert.equal((await s.getNoticeShownForVisitor(keep)).length, 1)
+    assert.equal(await s.countEntities({ tenantId: 'default', collection: 'consent_receipt', ref: keep }), 1)
+    await s.deleteEntities({ tenantId: 'default', collection: 'consent_receipt', ref: keep }).catch(() => 0)
+    await s.deleteVisitor(keep).catch(() => undefined)
+  })
+
   test('free-text search works on the consents, visitors and audit-log lists', async () => {
     const v = `${run}-search_%`
     await s.createConsent(input(v, 'prof_a'))

@@ -1033,8 +1033,32 @@ export class PostgreSQLAdapter implements StorageAdapter {
     return { id: r.id, name: r.name, slug: r.slug, createdAt: r.created_at, updatedAt: r.updated_at }
   }
 
+  /** Deletes the site and everything stored for it: consent records and their history, visitors,
+   * notice records, profiles, receipts and other entity records, its audit log, API keys,
+   * templates and settings. Users and roles are server-wide and stay. */
   async deleteTenant(id: string): Promise<void> {
-    await this.q('DELETE FROM consenti_tenants WHERE id=$1', [id])
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('DELETE FROM consenti_consent_history WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_consent_records WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_notice_shown WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_visitors WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_audit_logs WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_profiles WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_entity_records WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_api_keys WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_tenant_settings WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_consent_templates WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_ui_templates WHERE tenant_id=$1', [id])
+      await client.query('DELETE FROM consenti_tenants WHERE id=$1', [id])
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw err
+    } finally {
+      client.release()
+    }
   }
 
   async getSettings(tenantId: string): Promise<TenantSettings> {

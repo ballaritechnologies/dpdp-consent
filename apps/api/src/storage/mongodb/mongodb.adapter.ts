@@ -921,7 +921,21 @@ export class MongoDBAdapter implements StorageAdapter {
     return { id: doc._id, name: doc.name, slug: doc.slug, createdAt: doc.created_at, updatedAt: doc.updated_at }
   }
 
+  /** Deletes the site and everything stored for it: consent records and their history, visitors,
+   * notice records, profiles, receipts and other entity records, its audit log, API keys,
+   * templates and settings. Users and roles are server-wide and stay. */
   async deleteTenant(id: string): Promise<void> {
+    await this.col('consent_history').deleteMany({ tenant_id: id })
+    await this.col('consent_records').deleteMany({ tenant_id: id })
+    await this.col('notice_shown').deleteMany({ tenant_id: id })
+    await this.col('visitors').deleteMany({ tenant_id: id })
+    await this.col('audit_logs').deleteMany({ tenant_id: id })
+    await this.col('profiles').deleteMany({ tenant_id: id })
+    await this.col('entity_records').deleteMany({ tenant_id: id })
+    await this.col('api_keys').deleteMany({ tenant_id: id })
+    await this.col('consent_templates').deleteMany({ tenant_id: id })
+    await this.col('ui_templates').deleteMany({ tenant_id: id })
+    await this.col('tenant_settings').deleteOne({ _id: id })
     await this.col('tenants').deleteOne({ _id: id })
   }
 

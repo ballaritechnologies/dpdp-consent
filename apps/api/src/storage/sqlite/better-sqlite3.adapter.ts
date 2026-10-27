@@ -863,8 +863,29 @@ export class BetterSqlite3Adapter implements StorageAdapter {
     return { id: row.id, name: row.name, slug: row.slug, createdAt: row.created_at, updatedAt: row.updated_at }
   }
 
+  /** Deletes the site and everything stored for it: consent records and their history, visitors,
+   * notice records, profiles, receipts and other entity records, its audit log, API keys,
+   * templates and settings. Users and roles are server-wide and stay. */
   async deleteTenant(id: string): Promise<void> {
-    this.stmt('DELETE FROM tenants WHERE id = ?').run(id)
+    this.db.exec('BEGIN')
+    try {
+      this.stmt('DELETE FROM consent_history WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM consent_records WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM notice_shown WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM visitors WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM audit_logs WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM profiles WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM entity_records WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM api_keys WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM tenant_settings WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM consent_templates WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM ui_templates WHERE tenant_id = ?').run(id)
+      this.stmt('DELETE FROM tenants WHERE id = ?').run(id)
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
   }
 
   async getSettings(tenantId: string): Promise<TenantSettings> {

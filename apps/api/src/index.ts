@@ -630,7 +630,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
           }),
           ...buildAdminBreachRoutes(storage, authConfig, adminSecret, breachService),
           ...buildAdminApiKeyRoutes(storage, authConfig, adminSecret),
-          ...buildAdminTenantRoutes(storage, authConfig, adminSecret),
+          ...buildAdminTenantRoutes(storage, authConfig, adminSecret, profilesDir),
           ...buildAdminSettingsRoutes(storage, authConfig, adminSecret),
           ...buildAdminTcfRoutes(storage, authConfig, adminSecret, compliance.tcf),
           ...buildAdminGppRoutes(storage, authConfig, adminSecret, compliance.gpp),

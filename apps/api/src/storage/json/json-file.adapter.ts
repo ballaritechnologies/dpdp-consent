@@ -760,7 +760,22 @@ export class JsonFileAdapter implements StorageAdapter {
     return updated
   }
 
+  /** Deletes the site and everything stored for it: consent records and their history, visitors,
+   * notice records, profiles, receipts and other entity records, its audit log, API keys,
+   * templates and settings. Users and roles are server-wide and stay. */
   async deleteTenant(id: string): Promise<void> {
+    const other = <T extends { tenantId: string }>(rows: T[]) => rows.filter(r => r.tenantId !== id)
+    this.db.consent_history = other(this.db.consent_history)
+    this.db.consents = other(this.db.consents)
+    this.db.notice_shown = other(this.db.notice_shown)
+    this.db.visitors = other(this.db.visitors)
+    this.db.audit_logs = other(this.db.audit_logs)
+    this.db.profiles = other(this.db.profiles)
+    this.db.entity_records = other(this.db.entity_records)
+    this.db.api_keys = other(this.db.api_keys)
+    this.db.consent_templates = other(this.db.consent_templates)
+    this.db.ui_templates = other(this.db.ui_templates)
+    delete this.db.settings[id]
     this.db.tenants = this.db.tenants.filter(t => t.id !== id)
     this.scheduleWrite()
   }

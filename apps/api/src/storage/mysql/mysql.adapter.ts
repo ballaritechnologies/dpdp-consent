@@ -1027,8 +1027,32 @@ export class MySQLAdapter implements StorageAdapter {
     return this.getSettings(tenantId)
   }
 
+  /** Deletes the site and everything stored for it: consent records and their history, visitors,
+   * notice records, profiles, receipts and other entity records, its audit log, API keys,
+   * templates and settings. Users and roles are server-wide and stay. */
   async deleteTenant(id: string): Promise<void> {
-    await this.exec('DELETE FROM consenti_tenants WHERE id=?', [id])
+    const conn: PoolConnection = await this.pool.getConnection()
+    try {
+      await conn.beginTransaction()
+      await conn.query('DELETE FROM consenti_consent_history WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_consent_records WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_notice_shown WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_visitors WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_audit_logs WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_profiles WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_entity_records WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_api_keys WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_tenant_settings WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_consent_templates WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_ui_templates WHERE tenant_id=?', [id])
+      await conn.query('DELETE FROM consenti_tenants WHERE id=?', [id])
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback().catch(() => undefined)
+      throw err
+    } finally {
+      conn.release()
+    }
   }
 
   async purgeExpiredConsents(olderThanDays: number): Promise<number> {

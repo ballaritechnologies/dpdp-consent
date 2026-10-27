@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { StorageAdapter, AuthConfig } from '@consenti/types'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
@@ -7,6 +9,8 @@ export function buildAdminTenantRoutes(
   storage: StorageAdapter,
   authConfig: AuthConfig,
   secret: string,
+  /** Where profile files are kept (`<profilesDir>/<site id>/…`); removed with the site. */
+  profilesDir?: string,
 ) {
   async function auth(req: Request, perm: string) {
     const user = await authenticate(req, storage, authConfig, secret)
@@ -65,7 +69,11 @@ export function buildAdminTenantRoutes(
         const limited = allSitesOnly(user); if (limited) return limited
         const id = p['id'] ?? ''
         if (id === 'default') return errorResponse(400, 'Cannot delete the default tenant')
+        if (!/^[A-Za-z0-9_-]{1,100}$/.test(id)) return errorResponse(400, 'Invalid site ID')
+        if (!(await storage.getTenants()).some(t => t.id === id)) return errorResponse(404, 'Site not found')
+        // Everything stored for the site goes: its records in the database, then its profile files.
         await storage.deleteTenant(id)
+        if (profilesDir) await rm(join(profilesDir, id), { recursive: true, force: true })
         return json(200, { success: true })
       }),
   }

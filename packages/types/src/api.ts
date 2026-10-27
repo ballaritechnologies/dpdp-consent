@@ -1164,6 +1164,7 @@ export interface StorageAdapter {
   getTenants(): Promise<Tenant[]>
   createTenant(data: CreateTenantInput): Promise<Tenant>
   updateTenant(id: string, data: UpdateTenantInput): Promise<Tenant>
+  /** Deletes the site and all its data (consent records, visitors, profiles, receipts, audit log, keys, templates, settings). */
   deleteTenant(id: string): Promise<void>
   /** Returns `{}` (all fields unset) if no settings row exists yet for this tenant. */
   getSettings(tenantId: string): Promise<TenantSettings>

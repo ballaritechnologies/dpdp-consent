@@ -8,7 +8,7 @@
 
 import { describe, test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ConsentDbRecord } from '@consenti/types'
@@ -240,6 +240,29 @@ describe('multi-site isolation (admin API)', () => {
     assert.equal((await admin(`/consents?tenantId=${siteB}`, bToken)).status, 401)
     assert.equal((await admin(`/users/${me.id}`, adminToken, { method: 'PUT', body: JSON.stringify({ isActive: true, allowedTenants: [siteB] }) })).status, 200)
     assert.equal((await admin(`/consents?tenantId=${siteB}`, bToken)).status, 200)
+  })
+
+  test('deleting a site removes its data and profile files; other sites keep theirs', async () => {
+    const siteD = (await app.storage.createTenant({ name: 'Site D', slug: 'site-d' })).id
+    await app.servicesFor(siteD).profiles.seedDefaultProfile('opt-in-dpdpa')
+    const profile = (await app.servicesFor(siteD).profiles.findActiveByComplianceGroup('opt-in-dpdpa', siteD))!
+    const give = await app.honoApp.fetch(new Request(`http://localhost/consenti/api/v1/consent?tenant=${siteD}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ visitorId: 'visitor-d1', profileId: profile.id, locale: 'en', consentJson: {}, gpcDetected: false, source: 'banner' }),
+    }))
+    assert.equal(give.status, 201)
+    const profileDirs = () => readdirSync(dir, { recursive: true, withFileTypes: true }).filter(e => e.isDirectory() && e.name === siteD)
+    assert.ok(profileDirs().length > 0, 'the site has profile files')
+
+    assert.equal((await admin(`/tenants/${siteD}`, bToken, { method: 'DELETE' })).status, 403, 'site-limited users cannot')
+    assert.equal((await admin(`/tenants/${siteD}`, adminToken, { method: 'DELETE' })).status, 200)
+    assert.equal(await app.storage.getConsent('visitor-d1'), null)
+    assert.equal(await app.storage.countEntities({ tenantId: siteD, collection: 'consent_receipt' }), 0)
+    assert.deepEqual(await app.storage.getProfiles(siteD), [])
+    assert.deepEqual(profileDirs(), [], 'profile files removed')
+    assert.ok(existsSync(dir))
+    assert.equal((await admin(`/tenants/${siteD}`, adminToken, { method: 'DELETE' })).status, 404)
+    assert.equal((await admin(`/consents?tenantId=${siteB}`, bToken)).status, 200, 'other sites are untouched')
   })
 
   test('server-wide TCF settings are closed to site-limited users', async () => {

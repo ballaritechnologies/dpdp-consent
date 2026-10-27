@@ -51,6 +51,23 @@ export async function authenticate(
     const permissions = payload['permissions']
     const allowedTenants = payload['allowedTenants']
     if (typeof sub !== 'string' || typeof email !== 'string') return null
+    // Local accounts are checked against the database on every request, so deactivating or
+    // deleting a user, or changing their roles or sites, takes effect at once rather than when
+    // their 30-minute session token expires. ('jwt' mode tokens come from an outside issuer
+    // whose users may not exist here, so their claims are used as they are.)
+    if (config.mode === 'local') {
+      const user = await storage.getUserById(sub)
+      if (!user || !user.isActive) return null
+      const current = await storage.getUserRoles(user.id)
+      const permSets = await Promise.all(current.map(r => storage.getPermissionsForRole(r.id)))
+      return {
+        sub: user.id,
+        email: user.email,
+        roles: current.map(r => r.name),
+        permissions: [...new Set(permSets.flat().map(p => p.name))],
+        allowedTenants: user.allowedTenants ?? [],
+      }
+    }
     return {
       sub,
       email,

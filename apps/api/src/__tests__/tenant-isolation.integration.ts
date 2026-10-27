@@ -228,6 +228,20 @@ describe('multi-site isolation (admin API)', () => {
     assert.equal((await admin(`/roles?tenantId=${siteB}`, bToken)).status, 200)
   })
 
+  test('changes to a user apply to their open session at once', async () => {
+    const me = await (await admin('/auth/me', bToken)).json() as { id: string }
+    // A site granted now is usable with the token issued earlier.
+    const siteC = (await app.storage.createTenant({ name: 'Site C', slug: 'site-c' })).id
+    assert.equal((await admin(`/consents?tenantId=${siteC}`, bToken)).status, 403)
+    assert.equal((await admin(`/users/${me.id}`, adminToken, { method: 'PUT', body: JSON.stringify({ allowedTenants: [siteB, siteC] }) })).status, 200)
+    assert.equal((await admin(`/consents?tenantId=${siteC}`, bToken)).status, 200)
+    // A deactivated user is signed out straight away, not when the token expires.
+    assert.equal((await admin(`/users/${me.id}`, adminToken, { method: 'PUT', body: JSON.stringify({ isActive: false }) })).status, 200)
+    assert.equal((await admin(`/consents?tenantId=${siteB}`, bToken)).status, 401)
+    assert.equal((await admin(`/users/${me.id}`, adminToken, { method: 'PUT', body: JSON.stringify({ isActive: true, allowedTenants: [siteB] }) })).status, 200)
+    assert.equal((await admin(`/consents?tenantId=${siteB}`, bToken)).status, 200)
+  })
+
   test('server-wide TCF settings are closed to site-limited users', async () => {
     const res = await admin(`/tcf/registration-status?tenantId=${siteB}`, bToken)
     assert.equal(res.status, 403)

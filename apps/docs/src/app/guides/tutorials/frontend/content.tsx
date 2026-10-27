@@ -50,7 +50,7 @@ const widget = new ConsentiSetup({})
       />
 
       <Callout type="info">
-        No config is required to get a working, compliant banner with any of the three options.
+        No config is required to get a working opt-in banner with any of the three options.
         Everything from here on is about customizing it. See{' '}
         <Link href="/docs/ui/installation">UI Installation</Link> for CSS options and the full
         package structure (<code>dist/index.mjs</code> for ESM, <code>dist/index.umd.js</code> for

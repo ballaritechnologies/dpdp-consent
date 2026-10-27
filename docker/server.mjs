@@ -13,7 +13,7 @@ await consenti.ready
 
 const server = createServer(consenti.handler)
 server.listen(PORT, () => {
-  console.log(`Consenti listening on :${PORT}`)
+  console.log(`Ijazat listening on :${PORT}`)
   console.log(`Admin dashboard → http://localhost:${PORT}${BASE_PATH}/`)
   console.log(`REST API        → http://localhost:${PORT}${BASE_PATH}/api/v1/`)
 })

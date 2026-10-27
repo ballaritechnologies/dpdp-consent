@@ -56,12 +56,12 @@ export default function TermsPage() {
           are not liable for any damages arising from its use.
         </p>
 
-        <h2>3. Consenti does not itself guarantee legal compliance</h2>
+        <h2>3. Consenti is a toolkit, not legal advice</h2>
         <p>
-          Consenti is a <strong>toolkit</strong> for building a compliant consent flow — it is not a
+          Consenti is a <strong>toolkit</strong> for building a consent flow — it is not a
           substitute for legal advice, and installing it does not, by itself, make any website
-          compliant with GDPR, CCPA, or any other privacy law. Whether a given deployment is
-          actually compliant depends entirely on how it&apos;s configured: which compliance group is
+          meet GDPR, CCPA, or any other privacy law. Whether a given deployment meets them
+          depends entirely on how it&apos;s configured: which compliance group is
           selected, how cookies/categories/legal bases are set up, whether the banner copy is
           accurate for that business, and so on. See{' '}
           <Link href="/docs/compliance/compliance-groups">Compliance Groups</Link> for what each

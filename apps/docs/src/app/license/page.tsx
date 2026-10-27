@@ -98,9 +98,9 @@ export default function LicensePage() {
           standard Apache 2.0 warranty section, because Consenti is a <em>consent management</em>{' '}
           tool:{' '}
           <strong>
-            using Consenti does not by itself make any site or product legally compliant
+            using Consenti does not by itself make any site or product meet the requirements
           </strong>{' '}
-          with GDPR, CCPA, or any other privacy regulation. The maintainers bear no responsibility
+          of GDPR, CCPA, or any other privacy regulation. The maintainers bear no responsibility
           for legal or regulatory outcomes arising from the use, misuse, or misconfiguration of this
           software — that responsibility sits with whoever deploys and configures it. If you find a
           jurisdiction, regulation, or behavior that Consenti gets wrong, the software is open

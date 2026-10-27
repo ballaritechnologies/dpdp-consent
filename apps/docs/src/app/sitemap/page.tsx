@@ -277,7 +277,7 @@ const GROUPS: SitemapGroup[] = [
       {
         href: '/guides/hot-topics/dpdpa-cookie-compliance-guide',
         label: 'DPDPA Cookie Compliance Guide',
-        desc: 'A practical checklist for an India-compliant opt-in banner',
+        desc: 'A practical checklist for a DPDPA opt-in banner',
       },
       {
         href: '/guides/hot-topics/cpra-implementation-guide',

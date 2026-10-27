@@ -27,7 +27,8 @@
     "check:lockfile": "node scripts/check-lockfile.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version && node scripts/sync-root-version.mjs",
-    "publish-packages": "npx turbo build --filter=@consenti/ui --filter=@consenti/api && changeset publish"
+    "publish-packages": "npx turbo build --filter=@consenti/ui --filter=@consenti/api && changeset publish",
+    "check:wording": "node scripts/check-wording.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.1",

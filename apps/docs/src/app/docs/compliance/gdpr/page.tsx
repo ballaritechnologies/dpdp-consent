@@ -257,7 +257,7 @@ export default function GDPRPage() {
       <Callout type="warning">
         Under GDPR, the "Reject Optional" option must be as prominent as "Accept All". Do not use
         dark patterns such as grey-out reject buttons or hiding the reject option behind extra
-        clicks. Consenti's default profile is compliant, but custom profiles are your
+        clicks. Consenti's default profile gives both equal prominence; custom profiles are your
         responsibility.
       </Callout>
       <ul>

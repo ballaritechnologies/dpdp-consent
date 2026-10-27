@@ -28,7 +28,7 @@ const LEARN_GUIDES = [
   {
     href: '/guides/what-is-consenti',
     title: 'Consenti, What-Why-How?',
-    desc: 'What it is, why it detects jurisdiction in the browser, and how it plans to stay compliant.',
+    desc: 'What it is, why it detects jurisdiction in the browser, and how it keeps up with changing laws.',
   },
   {
     href: '/guides/frontend-only-mode',
@@ -157,7 +157,7 @@ const HOT_TOPICS = [
   {
     href: '/guides/hot-topics/dpdpa-cookie-compliance-guide',
     title: 'DPDPA Cookie Compliance Guide',
-    desc: 'A practical checklist for an India-compliant opt-in banner.',
+    desc: 'A practical checklist for a DPDPA opt-in banner.',
   },
   {
     href: '/guides/hot-topics/cpra-implementation-guide',

@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.next
+apps/docs
+apps/test-runner
+apps/scanner
+**/*.log
+.git
+.env
+**/.env
+consenti-data
+db

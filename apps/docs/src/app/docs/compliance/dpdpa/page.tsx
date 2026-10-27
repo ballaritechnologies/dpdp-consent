@@ -48,7 +48,7 @@ export default function DPDPAPage() {
         were notified 13 November 2025. Consent Manager provisions take effect 13 November 2026;
         the remaining substantive compliance obligations become binding 13 May 2027. Consenti's
         DPDPA support ships today and evolves alongside this timeline — treat it as actively
-        maintained, not yet a certified/audited implementation of the final rules.
+        maintained, not yet an independently audited implementation of the final rules.
       </Callout>
 
       <h2>Official references</h2>

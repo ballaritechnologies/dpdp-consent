@@ -275,7 +275,7 @@ new ConsentiSetup({
             answer: (
               <p className="m-0">
                 Tags simply don&apos;t load until the visitor responds to the banner. That&apos;s
-                compliant, but you lose the cookieless pings advanced mode sends before a decision
+                the cautious option, but you lose the cookieless pings advanced mode sends before a decision
                 is made — which Google uses to model conversions for non-consenting traffic. Most
                 sites that care about ad performance choose advanced mode.
               </p>

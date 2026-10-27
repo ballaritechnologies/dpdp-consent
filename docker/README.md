@@ -1,4 +1,12 @@
-# Consenti Docker Image
+# Docker
+
+> **Ijazat:** `docker compose up` uses the **root [`Dockerfile`](../Dockerfile)**, which builds the
+> server from this repository's source, so Ijazat's changes are included. The `Dockerfile` in this
+> folder is upstream's: it installs the published `@consenti/api` from npm, which does **not**
+> include Ijazat's changes. `server.mjs` here is shared by both. Behind a TLS-intercepting proxy,
+> build with `docker build --secret id=ca,src=/path/to/ca.pem .`.
+
+## Upstream image
 
 A maintained Docker image for self-hosting `@consenti/api`. This installs the **published npm
 package**, not the monorepo source — it stays in lockstep with whatever version you pin via
@@ -11,7 +19,8 @@ From the repo root:
 ```bash
 CONSENTI_ADMIN_PASSWORD=$(openssl rand -base64 24) \
 CONSENTI_ADMIN_MASTER_SECRET=$(openssl rand -hex 32) \
-docker compose up
+CONSENTI_DATA_SIGNING_HASH=$(openssl rand -hex 32) \
+docker compose up --build
 ```
 
 - Admin dashboard: `http://localhost:3000/consenti/`

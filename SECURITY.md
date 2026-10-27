@@ -4,19 +4,22 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Report vulnerabilities by emailing **support@consenti.dev** with the subject line:
-`[SECURITY] Consenti — <short description>`
+Report them privately through GitHub's **private vulnerability reporting**: on
+<https://github.com/ballaritechnologies/dpdp-consent>, open the **Security** tab and choose
+**Report a vulnerability**. Only the maintainers can see the report.
 
 Please include:
 
-- Affected package(s) and version(s)
+- Affected component(s) and version or commit
 - A description of the vulnerability and its impact
 - Steps to reproduce (proof-of-concept code if applicable)
 - Any suggested mitigations
 
-You will receive an acknowledgement within **48 hours** and a status update within **7 days**.
+We aim to acknowledge reports within **3 working days** and to give a status update within
+**10 working days**. We follow a **90-day coordinated disclosure** policy: please don't disclose
+publicly until a fix is released or 90 days have passed, whichever comes first.
 
-We follow a **90-day responsible disclosure** policy. We ask that you refrain from publicly disclosing the issue until we have released a fix or the 90-day window has passed, whichever comes first.
+If the issue is also present in upstream Consenti, we will coordinate with its maintainers.
 
 ---
 
@@ -32,11 +35,12 @@ We follow a **90-day responsible disclosure** policy. We ask that you refrain fr
 
 ## Security Architecture
 
-The following design decisions are security-relevant. Understanding them helps both auditors and operators deploy Consenti safely.
+The following design decisions are security-relevant. Understanding them helps both auditors and operators deploy Ijazat safely.
 
 ### Data Minimisation
 
-- **IP addresses are never stored raw.** Every IP is SHA-256 hashed before persistence: `createHash('sha256').update(ip).digest('hex')`. The original IP cannot be recovered.
+- **IP addresses are never stored raw.** Every IP is masked (last IPv4 octet / last 80 bits of IPv6 zeroed) and then SHA-256 hashed with the secret `compliance.dataSigningHash` as a salt (`hashIp()` in `apps/api/src/utils/crypto.ts`), so the stored value can't be reversed or brute-forced without the secret.
+- **No third-party trackers or analytics** ship in the widget, server or dashboard.
 - Visitor IDs use `crypto.randomUUID()` — no sequential integers that could be enumerated.
 
 ### Authentication & Authorisation
@@ -72,14 +76,14 @@ The following design decisions are security-relevant. Understanding them helps b
 
 ## Operator Security Checklist
 
-When deploying Consenti in production:
+When deploying Ijazat in production:
 
 - [ ] Set `NODE_ENV=production` to suppress stack traces
 - [ ] Configure a strong `auth.adminPassword` (≥ 16 chars, env var — never hardcoded; bootstrap enforces ≥ 12 chars minimum and warns below 16)
-- [ ] Set a random `jwt.secret` of at least 32 bytes (env var)
+- [ ] Set random `CONSENTI_ADMIN_MASTER_SECRET` and `CONSENTI_DATA_SIGNING_HASH` values of at least 32 bytes (env vars); the server refuses to boot in production without them
 - [ ] Set `cors.origins` to an explicit allowlist — never use `'*'` in production
 - [ ] Restrict filesystem access to the SQLite DB file (mode `600`, owned by the app user)
-- [ ] Put Consenti behind a reverse proxy (nginx / Caddy) with TLS termination
+- [ ] Put Ijazat behind a reverse proxy (nginx / Caddy) with TLS termination
 - [ ] Add `Content-Security-Policy`, `X-Frame-Options`, and `Strict-Transport-Security` headers at the proxy layer
 - [ ] Enable rate limiting (built-in) and configure `rateLimit.windowMs` / `rateLimit.max` for your traffic
 - [ ] Rotate the JWT secret if it is ever exposed; all active sessions will be invalidated

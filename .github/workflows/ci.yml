@@ -61,6 +61,12 @@ jobs:
       - name: Test
         run: npx turbo test
 
+      - name: Landing page build test
+        run: node --test site/landing/build.test.mjs
+
+      - name: No compliance claims in user-facing text
+        run: npm run check:wording
+
       - name: Widget functional checks (apps/test-runner)
         run: node dist/cli.js --scope functional
         working-directory: apps/test-runner

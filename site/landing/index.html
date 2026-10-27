@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ijazat · open-source DPDP consent tooling</title>
+<meta name="description" content="Open-source, self-hostable consent tooling for India's DPDP Act, with GDPR routing for EU/UK visitors. Built on Consenti.">
+<style>
+  :root { --bg:#fbfcfd; --fg:#14202e; --muted:#4f5b6b; --line:#dbe2ea; --accent:#0e7c66; --accent-fg:#fff; --card:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f141a; --fg:#e8ecf1; --muted:#a6b0bd; --line:#26303b; --accent:#3fc6a5; --accent-fg:#06221b; --card:#151c24; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 0 16px 64px; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:20px 0; }
+  .brand { font-weight:800; font-size:22px; letter-spacing:-.5px; }
+  .brand small { font-weight:400; color:var(--muted); font-size:14px; margin-left:8px; }
+  nav a { color:var(--fg); margin-left:16px; text-decoration:none; } nav a:hover { text-decoration:underline; }
+  h1 { font-size: clamp(30px, 5vw, 46px); line-height:1.15; letter-spacing:-1px; margin:48px 0 16px; }
+  .lead { font-size:19px; color:var(--muted); max-width:680px; }
+  .cta { display:flex; flex-wrap:wrap; gap:12px; margin:28px 0 8px; }
+  .btn { display:inline-block; padding:12px 18px; border-radius:8px; border:1px solid var(--accent); text-decoration:none; font-weight:600; }
+  .btn--primary { background:var(--accent); color:var(--accent-fg); } .btn--ghost { color:var(--accent); }
+  .btn:focus-visible, input:focus-visible, select:focus-visible, button:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .note { font-size:14px; color:var(--muted); }
+  section { margin-top:56px; }
+  h2 { font-size:24px; letter-spacing:-.4px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:17px; }
+  .card p { margin:0; color:var(--muted); font-size:15px; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:14px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; overflow-x:auto; }
+  form { display:grid; gap:12px; max-width:520px; }
+  label { font-weight:600; font-size:15px; }
+  input, select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); font:inherit; }
+  .check { display:flex; gap:10px; align-items:flex-start; font-weight:400; }
+  .check input { width:auto; margin-top:5px; }
+  .hp { position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden; }
+  button[type=submit] { padding:12px 18px; border-radius:8px; border:0; background:var(--accent); color:var(--accent-fg); font:inherit; font-weight:600; cursor:pointer; justify-self:start; }
+  [role=status] { min-height:1.6em; }
+  footer { margin-top:72px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+  footer a { color:inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">Ijazat <small>इजाज़त · built on Consenti</small></div>
+    <nav aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#checker">Checker</a>
+      <a href="__REPO_URL__">GitHub</a>
+    </nav>
+  </header>
+
+  <h1>Consent tooling for India's DPDP Act, with GDPR built in.</h1>
+  <p class="lead">An open-source consent widget, consent server and checker for teams selling in India
+    and the EU/UK. Self-host it for free, or join the waitlist for the hosted version.</p>
+  <div class="cta">
+    <a class="btn btn--primary" href="#waitlist">Join the waitlist</a>
+    <a class="btn btn--ghost" href="__REPO_URL__">Get the code</a>
+  </div>
+  <p class="note">Apache 2.0. Ijazat helps you meet DPDP and GDPR consent requirements; it is not legal advice.</p>
+
+  <section id="features" aria-labelledby="features-h">
+    <h2 id="features-h">What it does</h2>
+    <div class="grid">
+      <div class="card"><h3>DPDP consent flow</h3><p>Itemised notice, one choice per purpose, nothing pre-ticked, and a persistent "Privacy choices" button for withdrawal.</p></div>
+      <div class="card"><h3>Indian languages</h3><p>English, हिन्दी, ಕನ್ನಡ, తెలుగు and தமிழ் built in. Add more as data, without code changes.</p></div>
+      <div class="card"><h3>DPDP + GDPR routing</h3><p>India gets the DPDP flow, EU/UK visitors get a GDPR flow, everyone else a default you choose, per site.</p></div>
+      <div class="card"><h3>Consent records</h3><p>Consent storage, admin dashboard, append-only audit log, exports and erasure. IP addresses are never stored raw.</p></div>
+    </div>
+  </section>
+
+  <section id="checker" aria-labelledby="checker-h">
+    <h2 id="checker-h">Free DPDP consent checker</h2>
+    <p>Run it on any site, on your own machine. It lists gaps such as trackers firing before consent,
+      pre-ticked purposes, no way to withdraw, no grievance contact, or no Indian-language option.
+      Nothing is uploaded.</p>
+    <pre><code>node apps/scanner/dist/cli.js dpdp https://your-site.example</code></pre>
+  </section>
+
+  <section id="waitlist" aria-labelledby="waitlist-h">
+    <h2 id="waitlist-h">Hosted Ijazat waitlist</h2>
+    <p>India-region hosting, billing in USD or INR. We'll email you when it opens, and nothing else.</p>
+    <!--WAITLIST_FORM-->
+  </section>
+
+  <footer>
+    <p>Ijazat is maintained by Ballari Technologies Private Limited and is a fork of
+      <a href="https://github.com/santoshe61/consenti">Consenti</a> (Apache 2.0), not endorsed by
+      its maintainers. Nothing on this page is legal advice. This page sets no cookies and loads
+      nothing from third parties.</p>
+  </footer>
+</main>
+<!--WAITLIST_SCRIPT-->
+</body>
+</html>

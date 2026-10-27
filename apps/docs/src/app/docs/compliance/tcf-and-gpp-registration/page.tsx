@@ -34,9 +34,8 @@ export default function TcfAndGppRegistrationPage() {
         <strong>Most sites don&apos;t need anything on this page.</strong> TCF and GPP only matter if
         you monetize through programmatic/RTB advertising (header bidding, Google Ad Manager EU
         consent mode, any vendor in the IAB Global Vendor List). If you&apos;re only collecting consent
-        for first-party analytics, marketing, or functional cookies, Consenti is fully compliant across
-        every maintained jurisdiction (GDPR, UK-GDPR, CCPA/CPRA, LGPD, and more) with zero external
-        registration — skip straight to the rest of the <a href="/docs/compliance/compliance-groups">compliance docs</a>.
+        for first-party analytics, marketing, or functional cookies, no IAB registration is needed in
+        any maintained jurisdiction (GDPR, UK-GDPR, CCPA/CPRA, LGPD, and more) — skip straight to the rest of the <a href="/docs/compliance/compliance-groups">compliance docs</a>.
       </Callout>
 
       <Callout type="warning">

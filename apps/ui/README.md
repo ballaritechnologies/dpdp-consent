@@ -49,7 +49,7 @@ import { ConsentiSetup } from '@consenti/ui'
 ```html
 <script src="https://cdn.jsdelivr.net/npm/@consenti/ui/dist/index.umd.js"></script>
 <script>
-  const { ConsentiSetup } = ConsentiUI
+  const { ConsentiSetup } = Consenti
   new ConsentiSetup({ compliance: { type: 'opt-in' } })
 </script>
 ```

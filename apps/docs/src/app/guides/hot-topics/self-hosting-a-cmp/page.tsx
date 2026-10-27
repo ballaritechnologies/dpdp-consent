@@ -139,7 +139,7 @@ app.listen(3000)`}
       <h2>Data residency (PIPL, FZ-152)</h2>
       <p>
         Self-hosting gives you control over <em>where</em> consent records live — but "self-hosted"
-        is not automatically "compliant" for laws that require data to physically stay inside a
+        does not by itself satisfy laws that require data to physically stay inside a
         specific country. China's PIPL and Russia's FZ-152 (Federal Law No. 152 on Personal Data)
         both have in-country storage/localization requirements for data on their citizens.
       </p>
@@ -212,7 +212,7 @@ app.listen(3000)`}
             ),
           },
           {
-            question: 'Is self-hosting harder to keep GDPR/DPDPA compliant than a SaaS CMP?',
+            question: 'Is self-hosting harder to keep in line with GDPR/DPDPA than a SaaS CMP?',
             answer: (
               <p className="m-0">
                 Not inherently — compliance depends on what the banner shows and how consent is

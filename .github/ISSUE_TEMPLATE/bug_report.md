@@ -1,43 +1,31 @@
 ---
 name: Bug report
-about: Report a bug in @consenti/ui or @consenti/api
+about: Something in the widget, server, dashboard or checker doesn't work as documented
 title: '[Bug] '
 labels: bug
-assignees: 
+assignees: ''
 ---
 
-## Describe the bug
+**Security issue?** Don't file it here. Use private vulnerability reporting (see SECURITY.md).
 
-A clear description of what the bug is.
+## What happened
 
-## To reproduce
+## What you expected
 
-Steps to reproduce the behaviour:
+## Steps to reproduce
 
-1. ...
-2. ...
-3. ...
-
-## Expected behaviour
-
-What you expected to happen.
-
-## Actual behaviour
-
-What actually happened.
+1.
+2.
+3.
 
 ## Environment
 
-- Package: `@consenti/ui` / `@consenti/api`
-- Package version:
-- Node.js version:
-- Browser (if applicable):
-- OS:
+- Ijazat commit or release:
+- Part: widget / server / dashboard / checker / Docker
+- Node version (`node --version`):
+- Browser (for widget issues):
+- Storage driver:
 
-## Minimal reproduction
+## Logs or screenshots
 
-A minimal code example or link to a repository that reproduces the issue.
-
-## Additional context
-
-Any other context, screenshots, or error output.
+Please remove personal data (emails, IP addresses, visitor IDs) before posting.

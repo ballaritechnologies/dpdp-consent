@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Consenti, What-Why-How ? Why It Exists, and How It Stays Compliant',
+  title: 'Consenti, What-Why-How ? Why It Exists, and How It Keeps Up With the Law',
   description:
     'What Consenti is, why it detects jurisdiction in the browser instead of shipping one banner for everyone, and the compliance-review process the project is working toward.',
   keywords: [
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: '/guides/what-is-consenti' },
   openGraph: {
-    title: 'Consenti, What-Why-How ? Why It Exists, and How It Stays Compliant',
+    title: 'Consenti, What-Why-How ? Why It Exists, and How It Keeps Up With the Law',
     description:
       'What Consenti is, why it detects jurisdiction in the browser instead of shipping one banner for everyone, and how the project plans to keep pace with law changes.',
     url: 'https://consenti.dev/guides/what-is-consenti',
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Consenti, What-Why-How ? Why It Exists, and How It Stays Compliant',
+    title: 'Consenti, What-Why-How ? Why It Exists, and How It Keeps Up With the Law',
     description:
       'What Consenti is, why it detects jurisdiction in the browser instead of shipping one banner for everyone, and how the project plans to keep pace with law changes.',
     images: ['/og-image.jpg'],
@@ -157,7 +157,7 @@ export default function WhatIsConsentiPage() {
         named products.
       </p>
 
-      <h2>How Consenti aims to stay compliant</h2>
+      <h2>How Consenti keeps up with changing laws</h2>
       <Callout type="info">
         This section describes the process the project is working toward, not a settled fact about
         how every release ships today. Current, per-law status (Full / Partial / In development)
@@ -283,12 +283,12 @@ export default function WhatIsConsentiPage() {
       <FAQ
         items={[
           {
-            question: 'Is Consenti compliant out of the box?',
+            question: 'Does installing Consenti make my site lawful?',
             answer: (
               <p className="m-0">
                 It ships the infrastructure — jurisdiction-correct banners, blocking, audit
                 records, erasure endpoints — for the laws it actively maintains. Whether your
-                specific site is compliant also depends on what you configure (cookie categories,
+                specific site meets the law also depends on what you configure (cookie categories,
                 copy, retention) and your own legal review; Consenti doesn&apos;t replace that
                 judgment.
               </p>

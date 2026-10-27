@@ -45,7 +45,7 @@ export default function DpdpaCookieComplianceGuidePage() {
         implementation checklist, not the statute text.
       </p>
 
-      <h2>What a DPDPA-compliant cookie banner needs</h2>
+      <h2>What a DPDPA cookie banner needs</h2>
       <ol>
         <li>
           <strong>Opt-in by default.</strong> Every non-essential cookie category starts denied.
@@ -164,10 +164,10 @@ const consenti = createConsenti({
             question: 'Is a cookie banner alone enough for DPDPA compliance?',
             answer: (
               <p className="m-0">
-                A compliant banner covers the consent-collection half of DPDPA. The Act also
+                A well-built banner covers only the consent-collection half of DPDPA. The Act also
                 covers broader obligations — breach notification, data minimisation, grievance
                 redressal processes — that sit outside what any banner widget can handle alone.
-                Treat this guide as the cookie-consent slice, not full DPDPA compliance.
+                Treat this guide as the cookie-consent slice, not everything DPDPA requires.
               </p>
             ),
           },

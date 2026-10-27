@@ -9,7 +9,7 @@ function buildPrompt(url: string, question: string): string {
     ? `Answer this specific question: ${question.trim()}`
     : 'Summarize the key information on this page and explain how to use it.'
 
-  return `You are a helpful assistant for Consenti, an open-source GDPR, CCPA, TCF, GPC & many more regulation compliant across the globe for Cookie & Consent Management Platform (CMP).
+  return `You are a helpful assistant for Consenti, an open-source cookie and consent management platform (CMP) with tooling for GDPR, CCPA, TCF, GPC and many other privacy regulations. Never tell users that Consenti makes a site lawful; it is tooling, not legal advice.
 
 About Consenti:
 - Two npm packages: @consenti/ui (browser widget) and @consenti/api (Node.js backend)

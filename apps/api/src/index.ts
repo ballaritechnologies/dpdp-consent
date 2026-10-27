@@ -73,7 +73,7 @@ import { RateLimiter } from './middleware/rate-limit.middleware'
 import { handleCors, withCors, addSecurityHeaders, checkOriginAllowed } from './middleware/cors.middleware'
 import { errorResponse } from './middleware/error.middleware'
 import { nodeRequestToFetch, fetchResponseToNode, PayloadTooLargeError } from './utils/http'
-import type { ConsentiServerConfig, StorageAdapter, StorageConfig } from '@consenti/types'
+import type { ConsentiServerConfig, SiteRateLimits, StorageAdapter, StorageConfig } from '@consenti/types'
 import { EMBEDDED_COMPLIANCE_MAP } from '@consenti/utils'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -216,6 +216,7 @@ function buildFetchRouter(
   rateLimiter: RateLimiter | null,
   storage: StorageAdapter,
   resolveTenantId: (req: Request) => Promise<string>,
+  rateLimitSite: (req: Request) => Promise<{ tenantId: string; limits: SiteRateLimits }> = async () => ({ tenantId: 'default', limits: {} }),
 ): (request: Request) => Promise<Response> {
   const entries: RouteEntry[] = []
 
@@ -245,7 +246,8 @@ function buildFetchRouter(
       const matched = entries.find(e => e.rateLimit && pathname.match(e.pattern))
       if (matched) {
         const ip = request.headers.get('x-real-ip') ?? ''
-        if (!rateLimiter.checkRequest(ip)) {
+        const { tenantId, limits } = await rateLimitSite(request)
+        if (!rateLimiter.checkSiteRequest(tenantId, ip, limits)) {
           return withCors(errorResponse(429, 'Too Many Requests'), request)
         }
       }
@@ -334,6 +336,7 @@ const DEFAULT_CONFIG: ConsentiServerConfig = {
   rateLimit: {
     windowMs: process.env['CONSENTI_RATE_LIMIT_WINDOW_MS'] ? Number(process.env['CONSENTI_RATE_LIMIT_WINDOW_MS']) : 60_000,
     maxRequests: process.env['CONSENTI_RATE_LIMIT_MAX_REQUESTS'] ? Number(process.env['CONSENTI_RATE_LIMIT_MAX_REQUESTS']) : 60,
+    ...(process.env['CONSENTI_RATE_LIMIT_MAX_REQUESTS_PER_SITE'] ? { maxRequestsPerSite: Number(process.env['CONSENTI_RATE_LIMIT_MAX_REQUESTS_PER_SITE']) } : {}),
   },
   branding: {
     appLogoPath: "./logo-dark.svg",
@@ -528,6 +531,17 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
   // Public routes name their site with `?tenant=` (or an API key). Unknown sites are rejected
   // instead of silently falling back to `default`.
   const resolvePublicTenantId = multiTenantEnabled ? publicTenantResolver(storage) : async (_req: Request) => 'default'
+  // Public requests are rate-limited per site: the site's defaults, or a host's per-site overrides.
+  const rateLimitSite = async (req: Request): Promise<{ tenantId: string; limits: SiteRateLimits }> => {
+    let tenantId = '?' // an unknown site shares one bucket; its route answers 400 anyway
+    try { tenantId = await resolvePublicTenantId(req) } catch { /* unknown site */ }
+    const own = rl.siteLimits?.(tenantId) ?? null
+    const perSite = own?.maxRequestsPerSite ?? rl.maxRequestsPerSite
+    return {
+      tenantId,
+      limits: { maxRequests: own?.maxRequests ?? rl.maxRequests!, ...(perSite !== undefined ? { maxRequestsPerSite: perSite } : {}) },
+    }
+  }
 
   const basePath = config.basePath!
   const apiBase = `${basePath}/api/v1`
@@ -630,6 +644,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     rateLimiter,
     storage,
     resolveTenantId,
+    rateLimitSite,
   )
 
   let retentionTimer: ReturnType<typeof setInterval> | null = null

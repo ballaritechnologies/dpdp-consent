@@ -208,7 +208,9 @@ const consenti = createConsenti({
   rateLimit: {
     enabled: true,
     windowMs: 60_000,            // rolling window in ms (default: 60 000)
-    maxRequests: 60,             // max requests per IP per window (default: 60)
+    maxRequests: 60,             // max requests per IP per window, per site (default: 60)
+    // maxRequestsPerSite: 6000, // max requests per window to one site from all IPs (default: no cap)
+    // siteLimits: tenantId => ({ maxRequestsPerSite: 600 }), // per-site overrides, or null for the defaults
   },
 
   // ── Compliance ───────────────────────────────────────────────────────────────
@@ -1608,6 +1610,7 @@ All config fields can be set via environment variables. Code config takes preced
 | `CONSENTI_DB_PASSWORD`              | `storage.password`                 | —                                |
 | `CONSENTI_RATE_LIMIT_WINDOW_MS`     | `rateLimit.windowMs`               | `60000`                          |
 | `CONSENTI_RATE_LIMIT_MAX_REQUESTS`  | `rateLimit.maxRequests`            | `60`                             |
+| `CONSENTI_RATE_LIMIT_MAX_REQUESTS_PER_SITE` | `rateLimit.maxRequestsPerSite` | unset (no per-site cap)     |
 | `CONSENTI_MAX_BODY_SIZE`            | `maxBodySize`                      | `1048576` (1 MB)                 |
 
 ### Storage `.env` examples

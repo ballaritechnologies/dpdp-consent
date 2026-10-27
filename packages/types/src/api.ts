@@ -71,10 +71,25 @@ export interface AuthConfig {
   saml?: SamlConfig
 }
 
+/** Limits for one site, overriding `RateLimitConfig`'s defaults. */
+export interface SiteRateLimits {
+  /** Requests per visitor IP per window on this site. */
+  maxRequests?: number
+  /** Requests per window to this site from all IPs together. */
+  maxRequestsPerSite?: number
+}
+
 export interface RateLimitConfig {
   enabled?: boolean
   windowMs?: number
+  /** Requests per visitor IP per window, counted separately for each site. Default 60. */
   maxRequests?: number
+  /** Requests per window to one site from all IPs together, so one busy site can't starve the
+   * others on a shared server. Unset: no per-site cap. */
+  maxRequestsPerSite?: number
+  /** Per-site overrides (e.g. from a hosting plan); return null to use the defaults. Called on
+   * each rate-limited request, so it must be fast and synchronous. */
+  siteLimits?: (tenantId: string) => SiteRateLimits | null
 }
 
 export type GeoResult = {

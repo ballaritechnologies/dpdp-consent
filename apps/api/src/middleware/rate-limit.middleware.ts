@@ -18,7 +18,7 @@ export class RateLimiter {
     }, this.windowMs).unref()
   }
 
-  check(key: string): boolean {
+  check(key: string, max: number = this.maxRequests): boolean {
     const now = Date.now()
     const entry = this.store.get(key)
 
@@ -28,7 +28,18 @@ export class RateLimiter {
     }
 
     entry.count += 1
-    return entry.count <= this.maxRequests
+    return entry.count <= max
+  }
+
+  /**
+   * One public request to a site: the visitor IP's bucket on that site, then (when a per-site
+   * cap is set) the site's own bucket. IP buckets are per site, so a visitor busy on one site
+   * isn't limited on another; the site bucket keeps one busy site from starving the rest.
+   */
+  checkSiteRequest(tenantId: string, ip: string, limits: { maxRequests?: number; maxRequestsPerSite?: number } = {}): boolean {
+    if (!this.check(`ip:${tenantId}:${ip}`, limits.maxRequests ?? this.maxRequests)) return false
+    if (limits.maxRequestsPerSite !== undefined) return this.check(`site:${tenantId}`, limits.maxRequestsPerSite)
+    return true
   }
 
   // Returns false if either the IP bucket or the profileId bucket is exhausted.

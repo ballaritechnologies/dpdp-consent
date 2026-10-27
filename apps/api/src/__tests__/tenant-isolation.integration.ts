@@ -234,6 +234,46 @@ describe('multi-site isolation (admin API)', () => {
   })
 })
 
+describe('per-site rate limits', () => {
+  let dir: string
+  let app: ReturnType<typeof createConsenti>
+  let siteB = ''
+
+  before(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'ijazat-ratelimit-'))
+    app = createConsenti({
+      storage: { driver: 'json', path: dir },
+      auth: { mode: 'local', adminEmail: 'admin@example.test', adminPassword: 'Isolation-Passw0rd-1', masterSecret: 'm'.repeat(64) },
+      compliance: { type: 'opt-in-dpdpa', dataSigningHash: SIGNING },
+      multiTenant: { enabled: true },
+      rateLimit: { enabled: true, windowMs: 60_000, maxRequests: 3, siteLimits: id => (id === siteB ? { maxRequestsPerSite: 4 } : null) },
+    })
+    await app.ready
+    siteB = (await app.storage.createTenant({ name: 'Site B', slug: 'site-b' })).id
+  })
+  after(async () => {
+    await app.destroy()
+    await app.storage.disconnect()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  const hit = (site: string, ip: string) => app.honoApp.fetch(new Request(
+    `http://localhost/consenti/api/v1/consent/nobody${site === 'default' ? '' : `?tenant=${site}`}`, { headers: { 'x-real-ip': ip } },
+  )).then(r => r.status)
+
+  test('a visitor IP is counted separately on each site', async () => {
+    for (let i = 0; i < 3; i++) assert.notEqual(await hit('default', '10.0.0.1'), 429)
+    assert.equal(await hit('default', '10.0.0.1'), 429)
+    assert.notEqual(await hit(siteB, '10.0.0.1'), 429, 'the same IP is not limited on site B')
+  })
+
+  test('a per-site cap limits all IPs together on that site only', async () => {
+    for (const ip of ['10.0.1.1', '10.0.1.2', '10.0.1.3']) assert.notEqual(await hit(siteB, ip), 429)
+    assert.equal(await hit(siteB, '10.0.1.4'), 429, 'site B used its 4 requests')
+    assert.notEqual(await hit('default', '10.0.1.4'), 429, 'the default site is unaffected')
+  })
+})
+
 describe('SiteKeys', () => {
   test('default keeps the master key; other sites get distinct derived keys', () => {
     const keys = new SiteKeys('master')

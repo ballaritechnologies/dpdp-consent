@@ -1056,6 +1056,21 @@ All take `?tenantId=` (checked against the caller's allowed tenants). Details: [
 
 Events: `consent:purposes_expired` (`{ tenantId, visitorId, purposes }`) when retention switches purposes off. The `consent:erased` audit entry now keeps only a digest of the erased record (id, profile, version, timestamps), not the decisions.
 
+### Breach incidents
+
+Incident log with a 72-hour countdown to the Data Protection Board report, reminders, and DRAFT notices from editable templates. Details: [docs/breaches.md](../../docs/breaches.md).
+
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| `GET` | `/incidents` | `audit:view` | Incidents (filter `status`); each has `dueAt`, the report deadline (72 h after `discoveredAt`). |
+| `POST` | `/incidents` | `settings:update` | Log an incident (`title`, `description`, `discoveredAt`, `severity` required). |
+| `GET` / `PATCH` | `/incidents/:id` | `audit:view` / `settings:update` | Read or update fields and `status` (open, contained, reported, closed). |
+| `POST` | `/incidents/:id/milestones` | `settings:update` | `{ milestone: 'boardIntimatedAt' \| 'boardReportSentAt' \| 'usersNotifiedAt', at? }`. The Board report stops reminders. |
+| `POST` | `/incidents/:id/notices` | `audit:view` | `{ kind: 'board-intimation' \| 'board-report' \| 'user-notice', locale? }` → `{ text, template }`, always labelled DRAFT. |
+| `GET` | `/export/incidents` | `export:run` | CSV or JSON. |
+
+Server event `breach:deadline` (`{ tenantId, incidentId, title, dueAt, threshold, hoursLeft }`) fires at 48, 24 and 6 hours left and when overdue (checked every 15 minutes). Templates: `templates/breach/` (shipped in `dist/templates/breach/`); override with `compliance.breachTemplatesDir`.
+
 ### Multi-Tenant
 
 | Method     | Path             | Description          |

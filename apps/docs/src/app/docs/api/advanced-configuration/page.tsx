@@ -2152,6 +2152,15 @@ handleCache: async (paths, _profileId, isPurge) => {
         </li>
       </ul>
 
+      {/* ── breachTemplatesDir ───────────────────────────────────────────── */}
+      <h2>compliance.breachTemplatesDir</h2>
+      <p>
+        Folder with your own breach notice templates (<code>board-intimation.en.md</code>,{' '}
+        <code>board-report.en.md</code>, <code>user-notice.&lt;locale&gt;.md</code>). Files you leave
+        out fall back to the built-in drafts. See the{' '}
+        <a href="/guides/backend/breaches">Breach incidents guide</a>.
+      </p>
+
       {/* ── parentalConsentProvider ──────────────────────────────────────── */}
       <h2>compliance.parentalConsentProvider</h2>
       <p>

@@ -44,7 +44,7 @@
   "scripts": {
     "buildonly": "tsup",
     "watch": "tsup --watch && dev:dashboard",
-    "build:api": "tsup && node scripts/fix-node-prefix.mjs && node scripts/copy-widget.mjs",
+    "build:api": "tsup && node scripts/fix-node-prefix.mjs && node scripts/copy-widget.mjs && node scripts/copy-templates.mjs",
     "build:dashboard": "cd src/dashboard && vite build --config vite.config.ts",
     "build": "npm run build:api && npm run build:dashboard",
     "dev:server": "tsx --watch scripts/dev-server.ts",

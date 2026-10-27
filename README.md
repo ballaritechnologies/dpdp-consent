@@ -37,6 +37,8 @@ checker that lists consent gaps on any site.
   optional purposes until a parent's consent is verified and never analytics or advertising;
   parental-consent requests with a pluggable verification provider interface (no identity
   verification built in).
+- **Breach incidents:** an incident log with a 72-hour countdown to the Data Protection Board
+  report, reminders, and DRAFT notices for the Board and affected people from editable templates.
 - **Everything from Consenti:** banner and preferences panel, consent storage and REST API, admin
   dashboard with roles, append-only audit log, CSV/JSON/XLSX export, visitor erasure, Google
   Consent Mode v2, GPC, React/Vue/Angular hooks, SQLite/Postgres/MySQL/MongoDB storage.
@@ -123,6 +125,7 @@ everyone out and invalidates signatures), and prefer Postgres: see the comments 
 | [The DPDP consent checker](./docs/checker.md) | What each check means and how to fix a gap |
 | [Records](./docs/records.md) | Receipts, notice versions, deletion requests, retention |
 | [Children's data](./docs/children.md) | Age gate, parental consent, blocked purposes |
+| [Breach incidents](./docs/breaches.md) | Incident log, 72-hour countdown, draft notices |
 | [Widget: DPDP flow](./apps/ui/README.md#dpdp-flow-india) | Widget options, languages, the draft label |
 | [Server and API](./apps/api/README.md) | Configuration, storage drivers, REST API |
 | [Roadmap](./docs/roadmap.md) | What's next |

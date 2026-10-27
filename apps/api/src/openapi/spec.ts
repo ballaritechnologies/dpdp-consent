@@ -634,6 +634,70 @@ export const OPENAPI_ADMIN_SPEC = {
         parameters: [{ name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'profileId', in: 'query', schema: { type: 'string' } }],
         responses: { '200': { description: 'CSV or JSON download' } } },
     },
+    // ── Breach incidents ──────────────────────────────────────────────────
+    '/incidents': {
+      get: {
+        tags: ['Incidents'], summary: 'List breach incidents',
+        description: 'Each incident\'s `dueAt` is the Board report deadline: 72 hours after `discoveredAt`. Needs `audit:view`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'status', in: 'query', schema: { type: 'string', enum: ['open', 'contained', 'reported', 'closed'] } }, { name: 'page', in: 'query', schema: { type: 'integer' } }, { name: 'limit', in: 'query', schema: { type: 'integer' } }],
+        responses: { '200': { description: '{ items: BreachIncident[], total, page, limit, now }' } },
+      },
+      post: {
+        tags: ['Incidents'], summary: 'Log a breach incident',
+        description: '`title`, `description`, `discoveredAt` and `severity` are required. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }], parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: {
+          title: { type: 'string', maxLength: 200 }, description: { type: 'string', maxLength: 10000 },
+          discoveredAt: { type: 'string', format: 'date-time' }, occurredAt: { type: ['string', 'null'], format: 'date-time' }, containedAt: { type: ['string', 'null'], format: 'date-time' },
+          severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, cause: { type: 'string' },
+          dataCategories: { type: 'array', items: { type: 'string' } }, affectedCount: { type: ['integer', 'null'] }, affectedRegions: { type: 'array', items: { type: 'string' } },
+          systems: { type: 'string' }, likelyImpact: { type: 'string' }, containment: { type: 'string' }, userSteps: { type: 'string' },
+          organisation: { type: 'string' }, contactName: { type: 'string' }, contactEmail: { type: 'string' },
+        } } } } },
+        responses: { '201': { description: 'BreachIncident' }, '400': { description: 'Validation error' } },
+      },
+    },
+    '/incidents/{id}': {
+      get: { tags: ['Incidents'], summary: 'Get a breach incident', security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }], responses: { '200': { description: 'BreachIncident' }, '404': { description: 'Not found' } } },
+      patch: {
+        tags: ['Incidents'], summary: 'Update a breach incident',
+        description: 'Any of the fields, plus `status` (open, contained, reported, closed). Changing `discoveredAt` moves the deadline and resets reminders. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: {
+          title: { type: 'string', maxLength: 200 }, description: { type: 'string', maxLength: 10000 },
+          discoveredAt: { type: 'string', format: 'date-time' }, occurredAt: { type: ['string', 'null'], format: 'date-time' }, containedAt: { type: ['string', 'null'], format: 'date-time' },
+          severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, cause: { type: 'string' },
+          dataCategories: { type: 'array', items: { type: 'string' } }, affectedCount: { type: ['integer', 'null'] }, affectedRegions: { type: 'array', items: { type: 'string' } },
+          systems: { type: 'string' }, likelyImpact: { type: 'string' }, containment: { type: 'string' }, userSteps: { type: 'string' },
+          organisation: { type: 'string' }, contactName: { type: 'string' }, contactEmail: { type: 'string' },
+        } } } } },
+        responses: { '200': { description: 'BreachIncident' }, '400': { description: 'Validation error' }, '404': { description: 'Not found' } },
+      },
+    },
+    '/incidents/{id}/milestones': {
+      post: {
+        tags: ['Incidents'], summary: 'Record that a notice was sent',
+        description: 'Recording `boardReportSentAt` stops the deadline reminders. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['milestone'], properties: { milestone: { type: 'string', enum: ['boardIntimatedAt', 'boardReportSentAt', 'usersNotifiedAt'] }, at: { type: 'string', format: 'date-time' } } } } } },
+        responses: { '200': { description: 'BreachIncident' } },
+      },
+    },
+    '/incidents/{id}/notices': {
+      post: {
+        tags: ['Incidents'], summary: 'Draft a notice from the templates',
+        description: 'Fills the editable template (`board-intimation`, `board-report`, `user-notice`) for the locale, falling back to English. The text always starts with DRAFT - REQUIRES LEGAL REVIEW. Ijazat sends nothing. Needs `audit:view`.',
+        security: [{ BearerAuth: [] }], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['board-intimation', 'board-report', 'user-notice'] }, locale: { type: 'string', default: 'en' } } } } } },
+        responses: { '200': { description: '{ kind, locale, template, text }' } },
+      },
+    },
+    '/export/incidents': {
+      get: { tags: ['Export'], summary: 'Export breach incidents', description: 'Needs `export:run`.', security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'status', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'CSV or JSON download' } } },
+    },
     // ── Settings ──────────────────────────────────────────────────────────
     '/settings': {
       get: {

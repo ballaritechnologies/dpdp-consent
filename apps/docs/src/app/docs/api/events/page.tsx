@@ -104,6 +104,15 @@ await ready`}
           </tr>
           <tr>
             <td>
+              <code>breach:deadline</code>
+            </td>
+            <td>A breach incident&apos;s Board report deadline is 48, 24 or 6 hours away, or past</td>
+            <td>
+              <code>{'{ tenantId, incidentId, title, dueAt, threshold, hoursLeft }'}</code>
+            </td>
+          </tr>
+          <tr>
+            <td>
               <code>consent:purposes_expired</code>
             </td>
             <td>The retention job switched off purposes whose expiry period passed</td>
@@ -297,6 +306,20 @@ new CategoryAction({
         code={`eventBus.on('consent:erased', ({ visitorId }: { visitorId: string }) => {
   // Mirror the deletion to a data warehouse or external DMP
   myDmpClient.deleteVisitor(visitorId)
+})`}
+      />
+
+      {/* ── breach:deadline ───────────────────────────────────────────────── */}
+      <h2>breach:deadline</h2>
+      <p>
+        Fires (checked every 15 minutes) when a breach incident&apos;s 72-hour Board report
+        deadline is 48, 24 or 6 hours away, or has passed, until the report is recorded as sent.
+        See the <a href="/guides/backend/breaches">Breach incidents guide</a>.
+      </p>
+      <CodeBlock
+        lang="ts"
+        code={`eventBus.on('breach:deadline', ({ title, threshold, dueAt }) => {
+  alertTeam(\`Breach "\${title}": report \${threshold === 'overdue' ? 'overdue' : 'due'} (\${dueAt})\`)
 })`}
       />
 

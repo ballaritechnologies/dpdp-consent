@@ -2114,7 +2114,10 @@ ${AUTH_HEADER}
         <code>/export/notice-versions</code>). Payloads, permissions and behaviour:{' '}
         <a href="/guides/backend/records">Records guide</a>. Parental-consent requests:{' '}
         <code>GET /parental-consents</code> and <code>PATCH /parental-consents/:id</code> (see the{' '}
-        <a href="/guides/backend/children">Children&apos;s data guide</a>).
+        <a href="/guides/backend/children">Children&apos;s data guide</a>). Breach incidents:{' '}
+        <code>/incidents</code>, <code>/incidents/:id</code>, <code>/incidents/:id/milestones</code>,{' '}
+        <code>/incidents/:id/notices</code>, <code>/export/incidents</code> (see the{' '}
+        <a href="/guides/backend/breaches">Breach incidents guide</a>).
       </p>
 
       {/* ── Stats ────────────────────────────────────────────────── */}

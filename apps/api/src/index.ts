@@ -36,6 +36,7 @@ import { NoticeVersionService } from './services/notice-version.service'
 import { ErasureRequestService } from './services/erasure-request.service'
 import { RetentionService } from './services/retention.service'
 import { ParentalConsentService } from './services/parental-consent.service'
+import { BreachService } from './services/breach.service'
 import { LocalAuth } from './auth/local.auth'
 import { buildProfileRoutes } from './routes/public/profile.routes'
 import { buildConsentRoutes } from './routes/public/consent.routes'
@@ -52,6 +53,7 @@ import { buildAdminAuditRoutes } from './routes/admin/audit.routes'
 import { buildAdminStatsRoutes } from './routes/admin/stats.routes'
 import { buildAdminExportRoutes } from './routes/admin/export.routes'
 import { buildAdminRecordRoutes } from './routes/admin/records.routes'
+import { buildAdminBreachRoutes } from './routes/admin/breach.routes'
 import { buildAdminApiKeyRoutes } from './routes/admin/apikeys.routes'
 import { buildAdminTenantRoutes } from './routes/admin/tenants.routes'
 import { buildAdminSettingsRoutes } from './routes/admin/settings.routes'
@@ -474,6 +476,11 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     receiptService,
     parentalConsentService,
   )
+  const breachService = new BreachService(storage, auditRepo, [
+    ...(compliance.breachTemplatesDir ? [compliance.breachTemplatesDir] : []),
+    join(DIST_DIR, 'templates', 'breach'),        // built package
+    join(DIST_DIR, '..', 'templates', 'breach'),  // running from source
+  ], eventBus)
   const retentionService = new RetentionService(storage, consentService, receiptService, auditRepo, eventBus)
   const erasureRequestService = new ErasureRequestService(
     storage, auditRepo, id => receiptService.visitorRef(id), id => consentService.erase(id),
@@ -578,6 +585,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
           ...buildAdminRecordRoutes(storage, authConfig, adminSecret, {
             receipts: receiptService, noticeVersions: noticeVersionService, erasure: erasureRequestService, retention: retentionService, parentalConsent: parentalConsentService,
           }),
+          ...buildAdminBreachRoutes(storage, authConfig, adminSecret, breachService),
           ...buildAdminApiKeyRoutes(storage, authConfig, adminSecret),
           ...buildAdminTenantRoutes(storage, authConfig, adminSecret),
           ...buildAdminSettingsRoutes(storage, authConfig, adminSecret),
@@ -598,6 +606,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
   let retentionTimer: ReturnType<typeof setInterval> | null = null
   let recordsRetentionTimer: ReturnType<typeof setInterval> | null = null
   let recordsRetentionTimeout: ReturnType<typeof setTimeout> | null = null
+  let breachReminderTimer: ReturnType<typeof setInterval> | null = null
 
   // Resolves after storage.connect() + bootstrap() complete — consumers can await
   // this before accepting requests to guarantee the admin user already exists.
@@ -638,6 +647,14 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
         recordsRetentionTimer = setInterval(() => { void runRetention() }, 24 * 60 * 60_000)
       }, 60 * 60_000)
       recordsRetentionTimeout.unref?.()
+
+      // Breach report deadlines: check every 15 minutes, emitting `breach:deadline` as they near.
+      const runBreachReminders = () => breachService.runReminders()
+        .then(sent => { for (const e of sent) console.warn(`[ijazat] Breach ${e.incidentId} (${e.tenantId}): Board report ${e.threshold === 'overdue' ? 'is overdue' : `due in ${e.hoursLeft}h`} (${e.dueAt})`) })
+        .catch((err: unknown) => console.warn('[ijazat] Breach reminder run failed:', err))
+      void runBreachReminders()
+      breachReminderTimer = setInterval(() => { void runBreachReminders() }, 15 * 60_000)
+      breachReminderTimer.unref?.()
 
       if (compliance.dataRetention?.purgeAfterDays) {
         const days = compliance.dataRetention.purgeAfterDays
@@ -806,6 +823,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     erasureRequests: erasureRequestService,
     retention: retentionService,
     parentalConsent: parentalConsentService,
+    breaches: breachService,
   }
 
   return {
@@ -821,6 +839,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
       if (retentionTimer) clearInterval(retentionTimer)
       if (recordsRetentionTimer) clearInterval(recordsRetentionTimer)
       if (recordsRetentionTimeout) clearTimeout(recordsRetentionTimeout)
+      if (breachReminderTimer) clearInterval(breachReminderTimer)
       statsService.dispose()
       if (compliance.tcf?.enabled) { stopGvlRefresh(); stopCmpListRefresh() }
       complianceMapRefresh?.stop()

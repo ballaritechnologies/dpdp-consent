@@ -258,6 +258,11 @@ const GROUPS: SitemapGroup[] = [
         desc: 'Age gate, parental consent, blocked purposes',
       },
       {
+        href: '/guides/backend/breaches',
+        label: 'Breach incidents',
+        desc: 'Incident log, 72-hour countdown, draft notices',
+      },
+      {
         href: '/guides/backend/storage',
         label: 'Storage',
         desc: 'Storage adapters and data persistence',

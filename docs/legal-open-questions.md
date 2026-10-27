@@ -55,3 +55,12 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-C2 | By default, purposes holding analytics or advertising items are never granted to a child, even with parental consent. Is that the right reading of "tracking or behavioural monitoring" and "targeted advertising" (s.9(3))? Do functional or preference purposes also count? | `packages/utils/src/children.ts` (`DEFAULT_MINOR_BLOCKED_ITEM_PURPOSES`) | open |
 | Q-C3 | What counts as "verifiable" parental consent under the DPDP Rules, and is a staff-recorded manual verification (with a note) acceptable evidence? | `apps/api/src/services/parental-consent.service.ts` | open |
 | Q-C4 | The age gate is self-declared. When must a site verify age rather than ask, and what should happen when a visitor's answer later turns out to be false? | `apps/ui/src/ui/age-gate.ts` | open |
+
+## Breach incidents (Phase 7)
+
+| ID | Question | Where | Status |
+|---|---|---|---|
+| Q-B1 | The Board report deadline is counted as 72 hours from when the site records it "became aware". Is that the right trigger (rule 7(2)(b)), and how should an extension granted by the Board be recorded? | `apps/api/src/services/breach.service.ts` (`BREACH_REPORT_HOURS`) | open |
+| Q-B2 | Are the three draft notices (Board intimation, Board report, notice to people) complete for the DPDP Rules, and what must be added for GDPR Art. 33/34 when EU/UK people are affected? | `apps/api/templates/breach/*.md` | open |
+| Q-B3 | The Hindi notice to people was written without native-speaker or legal review. Which languages must the notice to people be offered in? | `apps/api/templates/breach/user-notice.hi.md` | open |
+| Q-B4 | How long should the incident log be kept, and may it hold the names of people involved in causing a breach? | `apps/api/src/services/breach.service.ts` | open |

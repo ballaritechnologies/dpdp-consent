@@ -276,6 +276,9 @@ export interface ComplianceConfig {
    * use only the parental-consent token flow and manual verification in the dashboard.
    */
   parentalConsentProvider?: ParentalConsentProvider
+  /** Folder with your own breach notice templates (`board-intimation.en.md`, …), replacing the
+   * built-in drafts. Missing files fall back to the built-in ones. */
+  breachTemplatesDir?: string
 }
 
 export type ParentalConsentStatus = 'pending' | 'verified' | 'failed'
@@ -835,6 +838,7 @@ export type EntityCollection =
   | 'erasure_request'
   | 'retention_policy'
   | 'parental_consent'
+  | 'breach_incident'
 
 export interface EntityRecord<T extends object = Record<string, unknown>> {
   id: string
@@ -972,6 +976,71 @@ export interface RetentionRunResult {
   expired: { visitorRef: string; purposes: string[] }[]
   receiptsDeleted: number
   erasureRequestsDeleted: number
+}
+
+export type BreachStatus = 'open' | 'contained' | 'reported' | 'closed'
+export type BreachSeverity = 'low' | 'medium' | 'high' | 'critical'
+/** The notices drafted for an incident. */
+export type BreachNoticeKind = 'board-intimation' | 'board-report' | 'user-notice'
+/** Milestones recorded when the site confirms it sent something. */
+export type BreachMilestone = 'boardIntimatedAt' | 'boardReportSentAt' | 'usersNotifiedAt'
+
+/** Editable fields of an incident (create and update). */
+export interface BreachIncidentFields {
+  title: string
+  description: string
+  /** When the site became aware (ISO). Starts the 72-hour clock. */
+  discoveredAt: string
+  occurredAt: string | null
+  containedAt: string | null
+  severity: BreachSeverity
+  /** What happened and why (nature, circumstances). */
+  cause: string
+  dataCategories: string[]
+  affectedCount: number | null
+  /** Country codes or regions of the people affected. */
+  affectedRegions: string[]
+  systems: string
+  likelyImpact: string
+  /** Measures taken or proposed to contain and mitigate. */
+  containment: string
+  /** What affected people can do to protect themselves. */
+  userSteps: string
+  /** Data Fiduciary name used in notices. */
+  organisation: string
+  contactName: string
+  contactEmail: string
+}
+
+export interface BreachHistoryEntry {
+  at: string
+  actorId: string | null
+  action: 'created' | 'updated' | 'status' | 'milestone' | 'notice_drafted' | 'reminder'
+  detail: string
+}
+
+/** `data` of a `breach_incident` entity. `dueAt` on the entity is the 72-hour report deadline. */
+export interface BreachIncidentData extends BreachIncidentFields {
+  boardIntimatedAt: string | null
+  boardReportSentAt: string | null
+  usersNotifiedAt: string | null
+  closedAt: string | null
+  /** Reminder thresholds already sent (e.g. `"24h"`, `"overdue"`). */
+  remindersSent: string[]
+  history: BreachHistoryEntry[]
+}
+
+export type BreachIncident = EntityRecord<BreachIncidentData>
+
+/** Payload of the server `breach:deadline` event. */
+export interface BreachDeadlineEvent {
+  tenantId: string
+  incidentId: string
+  title: string
+  dueAt: string
+  /** `"48h"`, `"24h"`, `"6h"` or `"overdue"`. */
+  threshold: string
+  hoursLeft: number
 }
 
 // ─── Storage adapter ──────────────────────────────────────────────────────────

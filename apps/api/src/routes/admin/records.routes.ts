@@ -11,7 +11,7 @@ import type {
   ErasureRequestStatus, ErasureRequestChannel, ConsentReceiptAction,
 } from '@consenti/types'
 import { withErrorHandler, errorResponse } from '../../middleware/error.middleware'
-import { authenticate, authError, type AuthenticatedUser } from '../../middleware/auth.middleware'
+import { tenantGuard, exportResponse, exportFormat, EXPORT_PAGE } from './route-helpers'
 import { getPagination, parseJsonBody, json } from '../../utils/http'
 import type { ReceiptService } from '../../services/receipt.service'
 import type { NoticeVersionService } from '../../services/notice-version.service'
@@ -23,7 +23,6 @@ import { RetentionPolicyError, type RetentionService } from '../../services/rete
 import { ParentalConsentError, type ParentalConsentService } from '../../services/parental-consent.service'
 
 const RECEIPT_ACTIONS: readonly ConsentReceiptAction[] = ['given', 'updated', 'withdrawn', 'expired', 'erased']
-const EXPORT_PAGE = 1000
 
 export interface RecordServices {
   receipts: ReceiptService
@@ -41,17 +40,6 @@ function isoParam(url: URL, key: string): string | undefined | Response {
   return new Date(t).toISOString()
 }
 
-function csvCell(val: unknown): string {
-  const s = val == null ? '' : typeof val === 'object' ? JSON.stringify(val) : String(val)
-  // Leading = + - @ would run as a formula when the file is opened in a spreadsheet.
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s
-  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
-}
-
-function csvRow(cells: unknown[]): string {
-  return cells.map(csvCell).join(',') + '\n'
-}
-
 export function buildAdminRecordRoutes(
   storage: StorageAdapter,
   authConfig: AuthConfig,
@@ -59,20 +47,7 @@ export function buildAdminRecordRoutes(
   services: RecordServices,
 ) {
   const { receipts, noticeVersions, erasure, retention, parentalConsent } = services
-
-  async function guard(req: Request, permission: string): Promise<{ user: AuthenticatedUser; tenantId: string } | Response> {
-    const user = await authenticate(req, storage, authConfig, secret)
-    const denied = authError(user, permission)
-    if (denied || !user) return denied ?? errorResponse(401, 'Unauthorized')
-    const tenantId = new URL(req.url).searchParams.get('tenantId') || 'default'
-    if (user.allowedTenants.length > 0 && !user.allowedTenants.includes(tenantId)) {
-      return errorResponse(403, 'Not allowed for this tenant')
-    }
-    if (tenantId !== 'default' && !(await storage.getTenants()).some(t => t.id === tenantId)) {
-      return errorResponse(404, 'Tenant not found')
-    }
-    return { user, tenantId }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
   function receiptFilter(url: URL, tenantId: string): EntityFilter | Response {
     const from = isoParam(url, 'from'); if (from instanceof Response) return from
@@ -98,49 +73,6 @@ export function buildAdminRecordRoutes(
   function erasureError(err: unknown): Response {
     if (err instanceof ErasureRequestError) return errorResponse(err.status, err.message)
     throw err
-  }
-
-  /** Streams every matching record, page by page, as CSV or one JSON array. */
-  function exportResponse<T>(
-    format: string, name: string, header: string[], toRow: (r: T) => unknown[],
-    page: (offset: number) => Promise<T[]>,
-  ): Response {
-    const enc = new TextEncoder()
-    const isJson = format === 'json'
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          controller.enqueue(enc.encode(isJson ? '[' : csvRow(header)))
-          let offset = 0
-          let first = true
-          for (;;) {
-            const rows = await page(offset)
-            for (const r of rows) {
-              controller.enqueue(enc.encode(isJson ? `${first ? '' : ','}${JSON.stringify(r)}` : csvRow(toRow(r))))
-              first = false
-            }
-            if (rows.length < EXPORT_PAGE) break
-            offset += rows.length
-          }
-          if (isJson) controller.enqueue(enc.encode(']'))
-          controller.close()
-        } catch (err) {
-          controller.error(err)
-        }
-      },
-    })
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        'Content-Type': isJson ? 'application/json' : 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${name}.${isJson ? 'json' : 'csv'}"`,
-      },
-    })
-  }
-
-  function exportFormat(url: URL): string | Response {
-    const f = url.searchParams.get('format') ?? 'csv'
-    return f === 'csv' || f === 'json' ? f : errorResponse(400, 'format must be csv or json')
   }
 
   return {

@@ -9,15 +9,15 @@ export class VisitorRepo {
     return this.adapter.createVisitor(data)
   }
 
-  update(visitorId: string, data: UpdateVisitorInput): Promise<Visitor> {
-    return this.adapter.updateVisitor(visitorId, data)
+  update(visitorId: string, data: UpdateVisitorInput, tenantId?: string): Promise<Visitor> {
+    return this.adapter.updateVisitor(visitorId, data, tenantId)
   }
 
-  delete(visitorId: string): Promise<void> {
-    return this.adapter.deleteVisitor(visitorId)
+  delete(visitorId: string, tenantId?: string): Promise<void> {
+    return this.adapter.deleteVisitor(visitorId, tenantId)
   }
 
-  get(visitorId: string): Promise<Visitor | null> {
-    return this.adapter.getVisitor(visitorId)
+  get(visitorId: string, tenantId?: string): Promise<Visitor | null> {
+    return this.adapter.getVisitor(visitorId, tenantId)
   }
 }

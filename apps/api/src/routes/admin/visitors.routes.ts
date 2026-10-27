@@ -41,7 +41,7 @@ export function buildAdminVisitorRoutes(
         if (!NOTICE_SHOWN_ENABLED) return errorResponse(404, 'Not found')
 
         const g = await guard(req, 'visitor:view'); if (g instanceof Response) return g
-        const records = (await storage.getNoticeShownForVisitor(p['visitorId'] ?? '')).filter(r => r.tenantId === g.tenantId)
+        const records = (await storage.getNoticeShownForVisitor(p['visitorId'] ?? '', g.tenantId)).filter(r => r.tenantId === g.tenantId)
         return json(200, records)
       }),
   }

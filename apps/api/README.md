@@ -1093,7 +1093,8 @@ Only active when `multiTenant.enabled: true`. Any signed-in user can list the si
 **How sites are kept apart:**
 - **Public API:** the site comes from a `ck_` API key or `?tenant=` (the widget sends it for any site other than `default`). An unknown site gets `400`.
 - **Admin API:** the site comes from `?tenantId=`. See "User `allowedTenants`" above.
-- **Lookups:** each site has its own profile, consent, visitor and notice services. Another site's records read as not found, and a visitor ID already used by one site is refused on another (`409`).
+- **Lookups:** each site has its own profile, consent, visitor and notice services. Storage reads, updates and deletes by visitor ID are limited to the site (`tenant_id`) in every driver. Another site's records read as not found, and a visitor ID already used by one site is refused on another (`409`).
+- **Rate limits:** see `rateLimit` above. Each site counts a visitor IP separately, with an optional per-site cap.
 - **Signing:** each site signs with its own key, `HMAC(dataSigningHash, site ID)`. The `default` site uses `dataSigningHash` itself, so single-site servers are unaffected. This covers consent-record signatures, receipts and their visitor pseudonyms, ownership cookies, parental-consent tokens and IP hashes. A cookie, token or receipt made for one site doesn't verify on another, and the same visitor ID gets unrelated receipt pseudonyms on two sites. Records a non-default site signed before per-site keys still verify through `dataSigningHash`.
 - **Server-wide:** users, roles and IAB TCF/GPP registration are shared by all sites.
 

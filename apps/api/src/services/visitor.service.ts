@@ -29,7 +29,7 @@ export class VisitorService {
         ...(data.country != null ? { country: data.country } : {}),
         ...(data.region != null ? { region: data.region } : {}),
         ...(data.city != null ? { city: data.city } : {}),
-      })
+      }, this.tenantId)
     }
     const input: CreateVisitorInput = {
       tenantId: this.tenantId,

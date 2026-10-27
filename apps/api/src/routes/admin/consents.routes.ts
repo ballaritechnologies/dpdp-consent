@@ -38,7 +38,7 @@ export function buildAdminConsentRoutes(
     'GET /consents/:visitorId': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
         const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
-        const record = await storage.getConsent(p['visitorId'] ?? '')
+        const record = await storage.getConsent(p['visitorId'] ?? '', g.tenantId)
         if (!record || record.tenantId !== g.tenantId) return errorResponse(404, 'Consent not found')
         return json(200, record)
       }),
@@ -46,7 +46,7 @@ export function buildAdminConsentRoutes(
     'GET /consents/:visitorId/history': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
         const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
-        const history = (await storage.getConsentHistory(p['visitorId'] ?? '')).filter(h => h.tenantId === g.tenantId)
+        const history = (await storage.getConsentHistory(p['visitorId'] ?? '', g.tenantId)).filter(h => h.tenantId === g.tenantId)
         return json(200, history)
       }),
   }

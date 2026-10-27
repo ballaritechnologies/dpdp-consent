@@ -147,6 +147,10 @@ interface RawUITemplate {
 
 type Val = string | number | null
 
+
+/** Limits a visitor-keyed query to one site: pass the site ID twice; null means any site. */
+const SITE = 'AND (? IS NULL OR tenant_id = ?)'
+
 export class NodeSqlite3WasmAdapter implements StorageAdapter {
   private db!: DB
   private cache = new Map<string, Statement>()
@@ -346,8 +350,8 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     return record
   }
 
-  async updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
-    const existing = await this.getConsent(visitorId)
+  async updateConsent(visitorId: string, data: UpdateConsentInput, tenantId?: string): Promise<ConsentDbRecord> {
+    const existing = await this.getConsent(visitorId, tenantId)
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
     const now = new Date().toISOString()
     const fields: string[] = ['updated_at = ?', 'consent_json = ?']
@@ -363,18 +367,18 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     this.stmt(
       'INSERT INTO consent_history (id,tenant_id,consent_record_id,visitor_id,profile_version,old_json,new_json,action,created_at) VALUES (?,?,?,?,?,?,?,?,?)'
     ).run([histId, existing.tenantId, existing.id, visitorId, data.profileVersion ?? existing.profileVersion ?? null, JSON.stringify(existing.consentJson), JSON.stringify(data.consentJson), 'updated', now])
-    const updated = await this.getConsent(visitorId)
+    const updated = await this.getConsent(visitorId, tenantId)
     if (!updated) throw new Error('Failed to update consent')
     return updated
   }
 
-  async deleteConsent(visitorId: string): Promise<void> {
-    this.stmt('DELETE FROM consent_history WHERE visitor_id = ?').run(visitorId)
-    this.stmt('DELETE FROM consent_records WHERE visitor_id = ?').run(visitorId)
+  async deleteConsent(visitorId: string, tenantId?: string): Promise<void> {
+    this.stmt(`DELETE FROM consent_history WHERE visitor_id = ? ${SITE}`).run([visitorId, tenantId ?? null, tenantId ?? null])
+    this.stmt(`DELETE FROM consent_records WHERE visitor_id = ? ${SITE}`).run([visitorId, tenantId ?? null, tenantId ?? null])
   }
 
-  async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const row = this.stmt('SELECT * FROM consent_records WHERE visitor_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1').get(visitorId) as RawConsent | null
+  async getConsent(visitorId: string, tenantId?: string): Promise<ConsentDbRecord | null> {
+    const row = this.stmt(`SELECT * FROM consent_records WHERE visitor_id = ? ${SITE} ORDER BY updated_at DESC, id DESC LIMIT 1`).get([visitorId, tenantId ?? null, tenantId ?? null]) as RawConsent | null
     return row ? this.mapConsent(row) : null
   }
 
@@ -413,10 +417,10 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     }
   }
 
-  async getConsentHistory(visitorId: string): Promise<ConsentHistoryEntry[]> {
+  async getConsentHistory(visitorId: string, tenantId?: string): Promise<ConsentHistoryEntry[]> {
     const rows = this.stmt(
-      'SELECT * FROM consent_history WHERE visitor_id = ? ORDER BY created_at ASC'
-    ).all(visitorId) as unknown as RawConsentHistory[]
+      `SELECT * FROM consent_history WHERE visitor_id = ? ${SITE} ORDER BY created_at ASC`
+    ).all([visitorId, tenantId ?? null, tenantId ?? null]) as unknown as RawConsentHistory[]
     return rows.map(r => ({
       id: r.id, tenantId: r.tenant_id, consentRecordId: r.consent_record_id,
       visitorId: r.visitor_id,
@@ -437,10 +441,10 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     return { id, tenantId: data.tenantId, visitorId: data.visitorId, profileId: data.profileId, locale: data.locale, createdAt: now }
   }
 
-  async getNoticeShownForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
+  async getNoticeShownForVisitor(visitorId: string, tenantId?: string): Promise<NoticeShownRecord[]> {
     const rows = this.stmt(
-      'SELECT * FROM notice_shown WHERE visitor_id = ? ORDER BY created_at DESC'
-    ).all(visitorId) as unknown as RawNoticeShown[]
+      `SELECT * FROM notice_shown WHERE visitor_id = ? ${SITE} ORDER BY created_at DESC`
+    ).all([visitorId, tenantId ?? null, tenantId ?? null]) as unknown as RawNoticeShown[]
     return rows.map(r => ({
       id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id,
       profileId: r.profile_id, locale: r.locale, createdAt: r.created_at,
@@ -472,26 +476,26 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     return visitor
   }
 
-  async updateVisitor(visitorId: string, data: UpdateVisitorInput): Promise<Visitor> {
+  async updateVisitor(visitorId: string, data: UpdateVisitorInput, tenantId?: string): Promise<Visitor> {
     const now = new Date().toISOString()
     const fields: string[] = ['last_seen = ?']
     const vals: Val[] = [data.lastSeen ?? now]
     if (data.country != null) { fields.push('country = ?'); vals.push(data.country) }
     if (data.region != null) { fields.push('region = ?'); vals.push(data.region) }
     if (data.city != null) { fields.push('city = ?'); vals.push(data.city) }
-    vals.push(visitorId)
-    this.stmt(`UPDATE visitors SET ${fields.join(', ')} WHERE visitor_id = ?`).run(vals)
-    const visitor = await this.getVisitor(visitorId)
+    vals.push(visitorId, tenantId ?? null, tenantId ?? null)
+    this.stmt(`UPDATE visitors SET ${fields.join(', ')} WHERE visitor_id = ? ${SITE}`).run(vals)
+    const visitor = await this.getVisitor(visitorId, tenantId)
     if (!visitor) throw new Error(`Visitor ${visitorId} not found`)
     return visitor
   }
 
-  async deleteVisitor(visitorId: string): Promise<void> {
-    this.stmt('DELETE FROM visitors WHERE visitor_id = ?').run(visitorId)
+  async deleteVisitor(visitorId: string, tenantId?: string): Promise<void> {
+    this.stmt(`DELETE FROM visitors WHERE visitor_id = ? ${SITE}`).run([visitorId, tenantId ?? null, tenantId ?? null])
   }
 
-  async getVisitor(visitorId: string): Promise<Visitor | null> {
-    const row = this.stmt('SELECT * FROM visitors WHERE visitor_id = ?').get(visitorId) as RawVisitor | null
+  async getVisitor(visitorId: string, tenantId?: string): Promise<Visitor | null> {
+    const row = this.stmt(`SELECT * FROM visitors WHERE visitor_id = ? ${SITE}`).get([visitorId, tenantId ?? null, tenantId ?? null]) as RawVisitor | null
     return row ? this.mapVisitor(row) : null
   }
 

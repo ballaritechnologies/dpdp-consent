@@ -230,6 +230,12 @@ interface DocCollection {
   aggregate(pipeline: object[]): { toArray(): Promise<object[]> }
 }
 
+
+/** A visitor-keyed filter, limited to one site when `tenantId` is given. */
+function byVisitor(visitorId: string, tenantId?: string): Record<string, string> {
+  return tenantId === undefined ? { visitor_id: visitorId } : { visitor_id: visitorId, tenant_id: tenantId }
+}
+
 export class MongoDBAdapter implements StorageAdapter {
   private client!: MongoClient
   private db!: Db
@@ -384,8 +390,8 @@ export class MongoDBAdapter implements StorageAdapter {
     return mapConsent(doc)
   }
 
-  async updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
-    const existing = await this.getConsent(visitorId)
+  async updateConsent(visitorId: string, data: UpdateConsentInput, tenantId?: string): Promise<ConsentDbRecord> {
+    const existing = await this.getConsent(visitorId, tenantId)
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
     const now = new Date().toISOString()
     const set: Record<string, unknown> = { updated_at: now, consent_json: data.consentJson }
@@ -402,13 +408,13 @@ export class MongoDBAdapter implements StorageAdapter {
     return mapConsent(res)
   }
 
-  async deleteConsent(visitorId: string): Promise<void> {
-    await this.col('consent_history').deleteMany({ visitor_id: visitorId })
-    await this.col('consent_records').deleteOne({ visitor_id: visitorId })
+  async deleteConsent(visitorId: string, tenantId?: string): Promise<void> {
+    await this.col('consent_history').deleteMany(byVisitor(visitorId, tenantId))
+    await this.col('consent_records').deleteMany(byVisitor(visitorId, tenantId))
   }
 
-  async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const doc = cast<DocConsent>(await this.col('consent_records').findOne({ visitor_id: visitorId }, { sort: { updated_at: -1, _id: -1 } }))
+  async getConsent(visitorId: string, tenantId?: string): Promise<ConsentDbRecord | null> {
+    const doc = cast<DocConsent>(await this.col('consent_records').findOne(byVisitor(visitorId, tenantId), { sort: { updated_at: -1, _id: -1 } }))
     return doc ? mapConsent(doc) : null
   }
 
@@ -462,9 +468,9 @@ export class MongoDBAdapter implements StorageAdapter {
     await this.col('consent_history').insertOne(doc)
   }
 
-  async getConsentHistory(visitorId: string): Promise<ConsentHistoryEntry[]> {
+  async getConsentHistory(visitorId: string, tenantId?: string): Promise<ConsentHistoryEntry[]> {
     const docs = castArr<DocConsentHistory>(
-      await this.col('consent_history').find({ visitor_id: visitorId }).sort({ created_at: 1 }).toArray(),
+      await this.col('consent_history').find(byVisitor(visitorId, tenantId)).sort({ created_at: 1 }).toArray(),
     )
     return docs.map(mapHistory)
   }
@@ -481,9 +487,9 @@ export class MongoDBAdapter implements StorageAdapter {
     }
   }
 
-  async getNoticeShownForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
+  async getNoticeShownForVisitor(visitorId: string, tenantId?: string): Promise<NoticeShownRecord[]> {
     const docs = castArr<DocNoticeShown>(
-      await this.col('notice_shown').find({ visitor_id: visitorId }).sort({ created_at: -1 }).toArray(),
+      await this.col('notice_shown').find(byVisitor(visitorId, tenantId)).sort({ created_at: -1 }).toArray(),
     )
     return docs.map(d => ({
       id: d._id, tenantId: d.tenant_id, visitorId: d.visitor_id,
@@ -508,24 +514,24 @@ export class MongoDBAdapter implements StorageAdapter {
     return mapVisitor(doc)
   }
 
-  async updateVisitor(visitorId: string, data: UpdateVisitorInput): Promise<Visitor> {
+  async updateVisitor(visitorId: string, data: UpdateVisitorInput, tenantId?: string): Promise<Visitor> {
     const set: Record<string, string> = { last_seen: data.lastSeen ?? new Date().toISOString() }
     if (data.country != null) set['country'] = data.country
     if (data.region != null) set['region'] = data.region
     if (data.city != null) set['city'] = data.city
     const res = cast<DocVisitor>(await this.col('visitors').findOneAndUpdate(
-      { visitor_id: visitorId }, { $set: set }, { returnDocument: 'after' },
+      byVisitor(visitorId, tenantId), { $set: set }, { returnDocument: 'after' },
     ))
     if (!res) throw new Error(`Visitor ${visitorId} not found`)
     return mapVisitor(res)
   }
 
-  async deleteVisitor(visitorId: string): Promise<void> {
-    await this.col('visitors').deleteOne({ visitor_id: visitorId })
+  async deleteVisitor(visitorId: string, tenantId?: string): Promise<void> {
+    await this.col('visitors').deleteOne(byVisitor(visitorId, tenantId))
   }
 
-  async getVisitor(visitorId: string): Promise<Visitor | null> {
-    const doc = cast<DocVisitor>(await this.col('visitors').findOne({ visitor_id: visitorId }))
+  async getVisitor(visitorId: string, tenantId?: string): Promise<Visitor | null> {
+    const doc = cast<DocVisitor>(await this.col('visitors').findOne(byVisitor(visitorId, tenantId)))
     return doc ? mapVisitor(doc) : null
   }
 

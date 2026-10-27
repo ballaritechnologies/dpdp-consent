@@ -1135,23 +1135,25 @@ export interface StorageAdapter {
   getOptInStats(tenantId: string, filters: OptInFilters): Promise<OptInStats>
 
   createConsent(data: CreateConsentInput): Promise<ConsentDbRecord>
-  updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord>
-  deleteConsent(visitorId: string): Promise<void>
-  getConsent(visitorId: string): Promise<ConsentDbRecord | null>
+  // Visitor-keyed methods take an optional `tenantId`: given, they only see that site's rows;
+  // omitted, any site's (used to check whether another site already holds a visitor ID).
+  updateConsent(visitorId: string, data: UpdateConsentInput, tenantId?: string): Promise<ConsentDbRecord>
+  deleteConsent(visitorId: string, tenantId?: string): Promise<void>
+  getConsent(visitorId: string, tenantId?: string): Promise<ConsentDbRecord | null>
   getConsents(filters: ConsentFilters): Promise<PagedResult<ConsentSummary>>
   streamConsents(filters: ConsentFilters): AsyncIterable<ConsentDbRecord>
 
   createVisitor(data: CreateVisitorInput): Promise<Visitor>
-  updateVisitor(visitorId: string, data: UpdateVisitorInput): Promise<Visitor>
-  deleteVisitor(visitorId: string): Promise<void>
-  getVisitor(visitorId: string): Promise<Visitor | null>
+  updateVisitor(visitorId: string, data: UpdateVisitorInput, tenantId?: string): Promise<Visitor>
+  deleteVisitor(visitorId: string, tenantId?: string): Promise<void>
+  getVisitor(visitorId: string, tenantId?: string): Promise<Visitor | null>
   getVisitors(filters: VisitorFilters): Promise<PagedResult<Visitor>>
 
-  getConsentHistory(visitorId: string): Promise<ConsentHistoryEntry[]>
+  getConsentHistory(visitorId: string, tenantId?: string): Promise<ConsentHistoryEntry[]>
   streamAuditLogs(filters: AuditFilters): AsyncIterable<AuditLog>
 
   createNoticeShown(data: CreateNoticeShownInput): Promise<NoticeShownRecord>
-  getNoticeShownForVisitor(visitorId: string): Promise<NoticeShownRecord[]>
+  getNoticeShownForVisitor(visitorId: string, tenantId?: string): Promise<NoticeShownRecord[]>
 
   getOverviewStats(tenantId: string): Promise<OverviewStats>
   getCategoryStats(tenantId: string): Promise<CategoryStats>

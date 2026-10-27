@@ -42,7 +42,7 @@ export class ConsentService {
 
   /** The visitor's consent record on this service's site; another site's record reads as none. */
   private async ownConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const record = await this.consents.get(visitorId)
+    const record = await this.consents.get(visitorId, this.tenantId)
     return record && record.tenantId === this.tenantId ? record : null
   }
 
@@ -172,6 +172,7 @@ export class ConsentService {
 
     builtConsent = await this.applyRegimeGpc(builtConsent, input.gpcDetected, profileCookies, categories)
 
+    // Looked up on every site on purpose: a visitor ID another site already holds is refused.
     const raw = await this.consents.get(input.visitorId)
     if (raw && raw.tenantId !== this.tenantId) throw new HttpError(409, 'Visitor ID not available')
     const existing = raw
@@ -289,7 +290,7 @@ export class ConsentService {
       record = await this.consents.update(input.visitorId, {
         ...updateData, profileVersion: profile.version,
         ...(existing.profileId !== input.profileId ? { profileId: input.profileId } : {}),
-      })
+      }, this.tenantId)
     } else {
       record = await this.consents.create(baseInput)
     }
@@ -380,7 +381,7 @@ export class ConsentService {
     const updateData = await (this.pluginEngine
       ? this.pluginEngine.runBeforeConsentUpdate(updatePayload)
       : Promise.resolve(updatePayload))
-    const record = await this.consents.update(visitorId, { ...updateData, profileVersion: profile.version })
+    const record = await this.consents.update(visitorId, { ...updateData, profileVersion: profile.version }, this.tenantId)
     await this.audit.log({
       tenantId: this.tenantId,
       action: 'consent:updated',
@@ -431,15 +432,15 @@ export class ConsentService {
   }
 
   async erase(visitorId: string): Promise<void> {
-    // Storage deletes by visitor ID across sites, so check first: another site's consent record
-    // or visitor row is left alone (and this call is a no-op for it).
+    // Another site's consent record or visitor row is left alone (this call is a no-op for it);
+    // the deletes below are limited to this site as well.
     const raw = await this.consents.get(visitorId)
     if (raw && raw.tenantId !== this.tenantId) return
     const visitor = await this.visitors.get(visitorId)
     if (visitor && visitor.tenantId !== this.tenantId) return
     const existing = raw
-    await this.consents.delete(visitorId)
-    await this.visitors.delete(visitorId)
+    await this.consents.delete(visitorId, this.tenantId)
+    await this.visitors.delete(visitorId, this.tenantId)
     // The audit log keeps only a digest of what was erased, never the decisions themselves —
     // otherwise erasing a visitor would leave their consent record behind in the log.
     await this.audit.log({

@@ -133,6 +133,12 @@ function toAuditSummary(l: AuditLog): AuditLogSummary {
   return { id, tenantId, action, resourceType, createdAt, ...(userId != null ? { userId } : {}), ...(resourceId != null ? { resourceId } : {}) }
 }
 
+
+/** Matches a visitor's rows, limited to one site when `tenantId` is given. */
+function ofVisitor(visitorId: string, tenantId?: string): (row: { visitorId: string; tenantId: string }) => boolean {
+  return row => row.visitorId === visitorId && (tenantId === undefined || row.tenantId === tenantId)
+}
+
 export class JsonFileAdapter implements StorageAdapter {
   private db: JsonDb = emptyDb()
   private filePath = ''
@@ -295,8 +301,8 @@ export class JsonFileAdapter implements StorageAdapter {
     return record
   }
 
-  async updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
-    const current = await this.getConsent(visitorId)
+  async updateConsent(visitorId: string, data: UpdateConsentInput, tenantId?: string): Promise<ConsentDbRecord> {
+    const current = await this.getConsent(visitorId, tenantId)
     const idx = current ? this.db.consents.findIndex(c => c.id === current.id) : -1
     if (idx === -1) throw new Error(`Consent for visitor ${visitorId} not found`)
     const existing = this.db.consents[idx]!
@@ -327,17 +333,19 @@ export class JsonFileAdapter implements StorageAdapter {
     return updated
   }
 
-  async deleteConsent(visitorId: string): Promise<void> {
-    this.db.consent_history = this.db.consent_history.filter(h => h.visitorId !== visitorId)
-    this.db.consents = this.db.consents.filter(c => c.visitorId !== visitorId)
+  async deleteConsent(visitorId: string, tenantId?: string): Promise<void> {
+    const match = ofVisitor(visitorId, tenantId)
+    this.db.consent_history = this.db.consent_history.filter(h => !match(h))
+    this.db.consents = this.db.consents.filter(c => !match(c))
     this.scheduleWrite()
   }
 
-  async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
+  async getConsent(visitorId: string, tenantId?: string): Promise<ConsentDbRecord | null> {
+    const match = ofVisitor(visitorId, tenantId)
     // The most recently updated record, should a visitor have more than one (legacy data).
     let newest: ConsentDbRecord | null = null
     for (const c of this.db.consents) {
-      if (c.visitorId === visitorId && (!newest || c.updatedAt > newest.updatedAt || (c.updatedAt === newest.updatedAt && c.id > newest.id))) newest = c
+      if (match(c) && (!newest || c.updatedAt > newest.updatedAt || (c.updatedAt === newest.updatedAt && c.id > newest.id))) newest = c
     }
     return newest
   }
@@ -367,9 +375,9 @@ export class JsonFileAdapter implements StorageAdapter {
     for (const c of this.db.consents.filter(c => c.tenantId === filters.tenantId)) yield c
   }
 
-  async getConsentHistory(visitorId: string): Promise<ConsentHistoryEntry[]> {
+  async getConsentHistory(visitorId: string, tenantId?: string): Promise<ConsentHistoryEntry[]> {
     return this.db.consent_history
-      .filter(h => h.visitorId === visitorId)
+      .filter(ofVisitor(visitorId, tenantId))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
@@ -387,9 +395,9 @@ export class JsonFileAdapter implements StorageAdapter {
     return record
   }
 
-  async getNoticeShownForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
+  async getNoticeShownForVisitor(visitorId: string, tenantId?: string): Promise<NoticeShownRecord[]> {
     return this.db.notice_shown
-      .filter(n => n.visitorId === visitorId)
+      .filter(ofVisitor(visitorId, tenantId))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 
@@ -414,8 +422,8 @@ export class JsonFileAdapter implements StorageAdapter {
     return visitor
   }
 
-  async updateVisitor(visitorId: string, data: UpdateVisitorInput): Promise<Visitor> {
-    const idx = this.db.visitors.findIndex(v => v.visitorId === visitorId)
+  async updateVisitor(visitorId: string, data: UpdateVisitorInput, tenantId?: string): Promise<Visitor> {
+    const idx = this.db.visitors.findIndex(ofVisitor(visitorId, tenantId))
     if (idx === -1) throw new Error(`Visitor ${visitorId} not found`)
     const existing = this.db.visitors[idx]!
     const updated: Visitor = {
@@ -430,13 +438,14 @@ export class JsonFileAdapter implements StorageAdapter {
     return updated
   }
 
-  async deleteVisitor(visitorId: string): Promise<void> {
-    this.db.visitors = this.db.visitors.filter(v => v.visitorId !== visitorId)
+  async deleteVisitor(visitorId: string, tenantId?: string): Promise<void> {
+    const match = ofVisitor(visitorId, tenantId)
+    this.db.visitors = this.db.visitors.filter(v => !match(v))
     this.scheduleWrite()
   }
 
-  async getVisitor(visitorId: string): Promise<Visitor | null> {
-    return this.db.visitors.find(v => v.visitorId === visitorId) ?? null
+  async getVisitor(visitorId: string, tenantId?: string): Promise<Visitor | null> {
+    return this.db.visitors.find(ofVisitor(visitorId, tenantId)) ?? null
   }
 
   async getVisitors(filters: VisitorFilters): Promise<PagedResult<Visitor>> {

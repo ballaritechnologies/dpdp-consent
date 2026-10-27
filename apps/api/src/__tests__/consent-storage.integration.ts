@@ -69,6 +69,41 @@ for (const [name, make] of DRIVERS) describe(`consent records (${name})`, () => 
     assert.equal((await s.getConsentHistory(v)).length, 2)
   })
 
+  test('visitor-keyed reads, updates and deletes stay on the site they name', async () => {
+    const other = (await s.createTenant({ name: 'Other', slug: `other-${run}` })).id
+    const v = `${run}-site`
+    await s.createConsent(input(v, 'prof_a'))
+    await s.createVisitor({ tenantId: 'default', visitorId: v })
+    await s.createNoticeShown({ tenantId: 'default', visitorId: v, profileId: 'prof_a', locale: 'en' })
+
+    // Seen without a site, and on its own site; not on another.
+    assert.ok(await s.getConsent(v))
+    assert.ok(await s.getConsent(v, 'default'))
+    assert.equal(await s.getConsent(v, other), null)
+    assert.equal((await s.getVisitor(v, 'default'))?.visitorId, v)
+    assert.equal(await s.getVisitor(v, other), null)
+    assert.equal((await s.getConsentHistory(v, 'default')).length, 1)
+    assert.deepEqual(await s.getConsentHistory(v, other), [])
+    assert.equal((await s.getNoticeShownForVisitor(v, 'default')).length, 1)
+    assert.deepEqual(await s.getNoticeShownForVisitor(v, other), [])
+
+    // Changes through another site fail or do nothing.
+    await assert.rejects(s.updateConsent(v, { consentJson: { a: 'denied' } }, other))
+    await assert.rejects(s.updateVisitor(v, { country: 'IN' }, other))
+    await s.deleteConsent(v, other)
+    await s.deleteVisitor(v, other)
+    assert.deepEqual((await s.getConsent(v, 'default'))?.consentJson, { a: 'granted' })
+    assert.ok(await s.getVisitor(v, 'default'))
+
+    // Through its own site they work.
+    assert.deepEqual((await s.updateConsent(v, { consentJson: { a: 'denied' } }, 'default')).consentJson, { a: 'denied' })
+    assert.equal((await s.updateVisitor(v, { country: 'IN' }, 'default')).country, 'IN')
+    await s.deleteConsent(v, 'default')
+    await s.deleteVisitor(v, 'default')
+    assert.equal(await s.getConsent(v), null)
+    assert.equal(await s.getVisitor(v), null)
+  })
+
   test('free-text search works on the consents, visitors and audit-log lists', async () => {
     const v = `${run}-search_%`
     await s.createConsent(input(v, 'prof_a'))

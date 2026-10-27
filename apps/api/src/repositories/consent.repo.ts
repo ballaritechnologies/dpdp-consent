@@ -10,16 +10,16 @@ export class ConsentRepo {
     return this.adapter.createConsent(data)
   }
 
-  update(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
-    return this.adapter.updateConsent(visitorId, data)
+  update(visitorId: string, data: UpdateConsentInput, tenantId?: string): Promise<ConsentDbRecord> {
+    return this.adapter.updateConsent(visitorId, data, tenantId)
   }
 
-  delete(visitorId: string): Promise<void> {
-    return this.adapter.deleteConsent(visitorId)
+  delete(visitorId: string, tenantId?: string): Promise<void> {
+    return this.adapter.deleteConsent(visitorId, tenantId)
   }
 
-  get(visitorId: string): Promise<ConsentDbRecord | null> {
-    return this.adapter.getConsent(visitorId)
+  get(visitorId: string, tenantId?: string): Promise<ConsentDbRecord | null> {
+    return this.adapter.getConsent(visitorId, tenantId)
   }
 
   list(filters: ConsentFilters): Promise<PagedResult<ConsentSummary>> {

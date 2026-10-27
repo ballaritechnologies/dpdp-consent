@@ -221,6 +221,10 @@ function mysqlTimestamp(d: Date = new Date()): string {
   return d.toISOString().slice(0, 19).replace('T', ' ')
 }
 
+
+/** Limits a visitor-keyed query to one site: pass the site ID twice; null means any site. */
+const SITE = 'AND (? IS NULL OR tenant_id=?)'
+
 export class MySQLAdapter implements StorageAdapter {
   private pool!: Pool
 
@@ -469,8 +473,8 @@ export class MySQLAdapter implements StorageAdapter {
     return mapConsent(row)
   }
 
-  async updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
-    const existing = await this.getConsent(visitorId)
+  async updateConsent(visitorId: string, data: UpdateConsentInput, tenantId?: string): Promise<ConsentDbRecord> {
+    const existing = await this.getConsent(visitorId, tenantId)
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
     const sets: string[] = ['consent_json=?']
     const vals: (string | number | boolean | null)[] = [JSON.stringify(data.consentJson)]
@@ -488,13 +492,13 @@ export class MySQLAdapter implements StorageAdapter {
     return mapConsent(row)
   }
 
-  async deleteConsent(visitorId: string): Promise<void> {
-    await this.exec('DELETE FROM consenti_consent_history WHERE visitor_id=?', [visitorId])
-    await this.exec('DELETE FROM consenti_consent_records WHERE visitor_id=?', [visitorId])
+  async deleteConsent(visitorId: string, tenantId?: string): Promise<void> {
+    await this.exec(`DELETE FROM consenti_consent_history WHERE visitor_id=? ${SITE}`, [visitorId, tenantId ?? null, tenantId ?? null])
+    await this.exec(`DELETE FROM consenti_consent_records WHERE visitor_id=? ${SITE}`, [visitorId, tenantId ?? null, tenantId ?? null])
   }
 
-  async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=? ORDER BY updated_at DESC, id DESC LIMIT 1', [visitorId])
+  async getConsent(visitorId: string, tenantId?: string): Promise<ConsentDbRecord | null> {
+    const rows = await this.q<RowConsent>(`SELECT * FROM consenti_consent_records WHERE visitor_id=? ${SITE} ORDER BY updated_at DESC, id DESC LIMIT 1`, [visitorId, tenantId ?? null, tenantId ?? null])
     return rows[0] ? mapConsent(rows[0]) : null
   }
 
@@ -545,8 +549,8 @@ export class MySQLAdapter implements StorageAdapter {
     )
   }
 
-  async getConsentHistory(visitorId: string): Promise<ConsentHistoryEntry[]> {
-    const rows = await this.q<RowConsentHistory>('SELECT * FROM consenti_consent_history WHERE visitor_id=? ORDER BY created_at ASC', [visitorId])
+  async getConsentHistory(visitorId: string, tenantId?: string): Promise<ConsentHistoryEntry[]> {
+    const rows = await this.q<RowConsentHistory>(`SELECT * FROM consenti_consent_history WHERE visitor_id=? ${SITE} ORDER BY created_at ASC`, [visitorId, tenantId ?? null, tenantId ?? null])
     return rows.map(mapHistory)
   }
 
@@ -561,8 +565,8 @@ export class MySQLAdapter implements StorageAdapter {
     return { id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id, profileId: r.profile_id, locale: r.locale, createdAt: r.created_at }
   }
 
-  async getNoticeShownForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
-    const rows = await this.q<RowNoticeShown>('SELECT * FROM consenti_notice_shown WHERE visitor_id=? ORDER BY created_at DESC', [visitorId])
+  async getNoticeShownForVisitor(visitorId: string, tenantId?: string): Promise<NoticeShownRecord[]> {
+    const rows = await this.q<RowNoticeShown>(`SELECT * FROM consenti_notice_shown WHERE visitor_id=? ${SITE} ORDER BY created_at DESC`, [visitorId, tenantId ?? null, tenantId ?? null])
     return rows.map(r => ({
       id: r.id, tenantId: r.tenant_id, visitorId: r.visitor_id,
       profileId: r.profile_id, locale: r.locale, createdAt: r.created_at,
@@ -585,26 +589,26 @@ export class MySQLAdapter implements StorageAdapter {
     return mapVisitor(row)
   }
 
-  async updateVisitor(visitorId: string, data: UpdateVisitorInput): Promise<Visitor> {
+  async updateVisitor(visitorId: string, data: UpdateVisitorInput, tenantId?: string): Promise<Visitor> {
     const sets: string[] = ['last_seen=NOW()']
     const vals: (string | number | boolean | null)[] = []
     if (data.country != null) { sets.push('country=?'); vals.push(data.country) }
     if (data.region != null) { sets.push('region=?'); vals.push(data.region) }
     if (data.city != null) { sets.push('city=?'); vals.push(data.city) }
-    vals.push(visitorId)
-    await this.exec(`UPDATE consenti_visitors SET ${sets.join(',')} WHERE visitor_id=?`, vals)
-    const rows = await this.q<RowVisitor>('SELECT * FROM consenti_visitors WHERE visitor_id=?', [visitorId])
+    vals.push(visitorId, tenantId ?? null, tenantId ?? null)
+    await this.exec(`UPDATE consenti_visitors SET ${sets.join(',')} WHERE visitor_id=? ${SITE}`, vals)
+    const rows = await this.q<RowVisitor>(`SELECT * FROM consenti_visitors WHERE visitor_id=? ${SITE}`, [visitorId, tenantId ?? null, tenantId ?? null])
     const row = rows[0]
     if (!row) throw new Error(`Visitor ${visitorId} not found`)
     return mapVisitor(row)
   }
 
-  async deleteVisitor(visitorId: string): Promise<void> {
-    await this.exec('DELETE FROM consenti_visitors WHERE visitor_id=?', [visitorId])
+  async deleteVisitor(visitorId: string, tenantId?: string): Promise<void> {
+    await this.exec(`DELETE FROM consenti_visitors WHERE visitor_id=? ${SITE}`, [visitorId, tenantId ?? null, tenantId ?? null])
   }
 
-  async getVisitor(visitorId: string): Promise<Visitor | null> {
-    const rows = await this.q<RowVisitor>('SELECT * FROM consenti_visitors WHERE visitor_id=?', [visitorId])
+  async getVisitor(visitorId: string, tenantId?: string): Promise<Visitor | null> {
+    const rows = await this.q<RowVisitor>(`SELECT * FROM consenti_visitors WHERE visitor_id=? ${SITE}`, [visitorId, tenantId ?? null, tenantId ?? null])
     return rows[0] ? mapVisitor(rows[0]) : null
   }
 

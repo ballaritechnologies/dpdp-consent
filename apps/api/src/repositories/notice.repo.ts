@@ -9,7 +9,7 @@ export class NoticeRepo {
     return this.adapter.createNoticeShown(data)
   }
 
-  getForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
-    return this.adapter.getNoticeShownForVisitor(visitorId)
+  getForVisitor(visitorId: string, tenantId?: string): Promise<NoticeShownRecord[]> {
+    return this.adapter.getNoticeShownForVisitor(visitorId, tenantId)
   }
 }

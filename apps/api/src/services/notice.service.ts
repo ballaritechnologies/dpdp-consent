@@ -12,6 +12,6 @@ export class NoticeService {
   }
 
   getForVisitor(visitorId: string): Promise<NoticeShownRecord[]> {
-    return this.notices.getForVisitor(visitorId)
+    return this.notices.getForVisitor(visitorId, this.tenantId)
   }
 }

@@ -64,12 +64,14 @@ The natural storage location is **`TenantSettings`**, because a tenant is curren
 
 **Summary: tenant isolation is schema-level, but not enforced at runtime for most paths. Treat multi-tenant mode as incomplete.**
 
-> **Status, 2026-10-27:** gaps 1, 2 and 4 are fixed and gap 3 is mitigated, in three stages (changelog `2026-10-27-V8`, `-V9`, `-V10`):
+> **Status, 2026-10-27:** all five gaps are fixed (changelog `2026-10-27-V8` to `-V13`):
 > - **Public API:** services are built per site (`TenantServices`). Every public route resolves the site from the `ck_` API key or `?tenant=`, and unknown sites get `400`.
 > - **Admin API:** every admin route works on the site named by `?tenantId=`, checked against the user's `allowedTenants`. Lookups by ID return `404` for another site's records. Users, roles and the list of sites are only managed by users of every site.
 > - **Signing keys:** each non-default site signs with its own key, derived from `dataSigningHash`. This covers consent-record signatures, receipts, receipt pseudonyms, ownership cookies and parental-consent tokens.
-> - **Gap 3:** storage still looks up consent records and visitors by `visitor_id` alone. The services treat another site's row as not found, and refuse (`409`) a visitor ID already used by another site.
-> - **Still open:** gap 5. Cross-site tests: `apps/api/src/__tests__/tenant-isolation.integration.ts`. The findings below are kept as written.
+> - **Gap 3:** the visitor-keyed storage methods take the site and filter on `tenant_id` in every driver. A visitor ID already used by another site is refused (`409`).
+> - **Gap 5:** a visitor has one current record, which moves to the new profile when they decide again under another one. With older duplicate records, `getConsent` returns the most recently updated one on every driver.
+> - **Rate limits:** the public API is also rate-limited per site.
+> - **Tests:** `tenant-isolation.integration.ts`, `consent-storage.integration.ts` (every driver) and `consent-profile-switch.integration.ts`. The findings below are kept as written.
 
 What exists:
 - Every core table has a `tenant_id` column: `profiles`, `consent_records`, `consent_history`, `visitors`, `users`, `roles`, `audit_logs`, and `user_roles` (migration 003).

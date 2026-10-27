@@ -270,7 +270,61 @@ export interface ComplianceConfig {
   /** Expiry window for parental-consent tokens issued by `POST /consent/:visitorId/parental-consent-request`.
    * Default: 7 days. */
   parentalConsentTokenTtlDays?: number
+  /**
+   * Verifies a parent's or guardian's consent for a child (a visitor who answered the age gate as
+   * under age). Ijazat does no identity verification itself: plug in a provider, or leave unset to
+   * use only the parental-consent token flow and manual verification in the dashboard.
+   */
+  parentalConsentProvider?: ParentalConsentProvider
 }
+
+export type ParentalConsentStatus = 'pending' | 'verified' | 'failed'
+
+export interface ParentalConsentStartInput {
+  /** Ijazat's ID for this request (`pcr_…`). */
+  requestId: string
+  tenantId: string
+  /** Hashed visitor ID: providers never see the raw one. */
+  visitorRef: string
+  profileId: string
+  locale: string | null
+}
+
+export interface ParentalConsentProviderResult {
+  status: ParentalConsentStatus
+  /** The provider's own reference for this verification, passed back to `check()`. */
+  providerRef: string
+  /** Where to send the parent or guardian (shown to the visitor by the site). */
+  redirectUrl?: string
+  /** Short text for the visitor, e.g. what happens next. */
+  message?: string
+  /** How consent was verified, for the record (e.g. `"digilocker"`, `"email+id"`). */
+  method?: string
+}
+
+/**
+ * A parental-consent verification service. `start()` begins verification for one request;
+ * `check()` reports its current state. Both may be called again; they must be idempotent.
+ */
+export interface ParentalConsentProvider {
+  readonly id: string
+  start(input: ParentalConsentStartInput): Promise<ParentalConsentProviderResult>
+  check(providerRef: string): Promise<ParentalConsentProviderResult>
+}
+
+/** `data` of a `parental_consent` entity (`ref` = hashed visitor ID). */
+export interface ParentalConsentRequestData {
+  profileId: string
+  locale: string | null
+  providerId: string | null
+  providerRef: string | null
+  method: string | null
+  redirectUrl: string | null
+  message: string | null
+  history: { at: string; status: ParentalConsentStatus; source: 'provider' | 'token' | 'dashboard' | 'request'; actorId: string | null; note: string | null }[]
+}
+
+export type ParentalConsentRequest = EntityRecord<ParentalConsentRequestData>
 
 export interface DashboardConfig {
   enabled?: boolean
@@ -780,6 +834,7 @@ export type EntityCollection =
   | 'notice_version'
   | 'erasure_request'
   | 'retention_policy'
+  | 'parental_consent'
 
 export interface EntityRecord<T extends object = Record<string, unknown>> {
   id: string
@@ -846,6 +901,8 @@ export interface ConsentReceiptData {
   consent: Record<string, string>
   /** Purposes switched off by this receipt's action (`expired`). */
   expiredPurposes?: string[]
+  /** Set for a visitor who answered the age gate as under age. */
+  minor?: 'parental_consent_pending' | 'parental_consent_verified'
   /** HMAC-SHA256 over the receipt's fields and its time, with the server's data-signing secret. */
   signature: string
 }

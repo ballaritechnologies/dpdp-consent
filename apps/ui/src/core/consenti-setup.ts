@@ -38,7 +38,7 @@ import type {
   IdentifyEventDetail,
   VisitorIdentity,
 } from '../types'
-import { buildCookieCategoryIndex, isMandatoryCookie, resolveTextDirection } from '@consenti/utils'
+import { buildCookieCategoryIndex, isMandatoryCookie, resolveTextDirection, restrictConsentForMinor, purposesBlockedForMinors, MINOR_PENDING, MINOR_PARENT_VERIFIED, type MinorCookieStatus } from '@consenti/utils'
 import { scanConsentScripts } from '../utils/script-scanner'
 import type { ConsentScript } from '../utils/consent-script'
 import type { CategoryScript } from '../utils/category-script'
@@ -104,6 +104,8 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
   /** Set once the age gate (if enabled) resolves; threaded onto every `submitConsent` call thereafter. */
   private _ageVerified: boolean | undefined = undefined
   private _parentalConsentToken: string | undefined = undefined
+  /** For a visitor who answered the age gate as under age: whether a parent's consent is verified. */
+  private _parentVerified = false
   private broadcastChannel = new ConsentiChannel()
   private readyResolve!: () => void
   private readyPromise: Promise<void>
@@ -327,6 +329,12 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
           ? await this.consentStore.readAndVerify(signingKey)
           : this.consentStore.read()
       const hasExisting = existing !== null
+      // A child's answer to the age gate outlives the page: restore it from the consent cookie.
+      const minor = hasExisting ? this.consentStore.getMinorStatus() : null
+      if (minor) {
+        this._ageVerified = false
+        this._parentVerified = minor === MINOR_PARENT_VERIFIED
+      }
 
       const ageGateConfig = profile.ageGate
       if (ageGateConfig?.enabled && !hasExisting) {
@@ -530,6 +538,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     this.ageGate?.remove()
     this.ageGate = null
     this._ageVerified = confirmed
+    this._parentVerified = false
 
     if (confirmed) {
       await this.continueInit(profile, detectGPC(), false)
@@ -549,7 +558,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
           const { httpRequest } = await import('../utils/http')
           const response = await httpRequest<{ token: string }>(
             `${base}/consenti/api/v1/consent/${this.visitorId()}/parental-consent-request`,
-            { method: 'POST', body: JSON.stringify({ profileId: this.profileId() }) },
+            { method: 'POST', body: JSON.stringify({ profileId: this.profileId(), locale: this.config.core.locale ?? 'en' }) },
             this.config.api.authToken,
           )
           token = response.token
@@ -592,6 +601,69 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     this.readyResolve()
     this.scannedScripts.push(...scanConsentScripts(this))
     this.syncDpdpReopenControl()
+    if (this._ageVerified === false && !this._parentVerified && this.config.api?.enabled && this.consentStore?.getMinorStatus()) {
+      void this.checkParentalConsent()
+    }
+  }
+
+  /** Categories a child can't switch on right now, with the note shown on each. */
+  private minorLockedCategories(): Map<string, string> {
+    const locked = new Map<string, string>()
+    if (this._ageVerified !== false || !this.profile) return locked
+    const categories = this.profile.preferenceModal?.categories ?? {}
+    const labels = dpdpLabelsFor(this.config.core.locale ?? 'en', this.profile.dpdpa)
+    const blocked = new Set(purposesBlockedForMinors(categories, this.profile.cookies, this.profile.ageGate?.blockedPurposes))
+    for (const [id, cat] of Object.entries(categories)) {
+      if (cat.legalBasis === 'mandatory') continue
+      if (blocked.has(id)) locked.set(id, labels.minorBlocked)
+      else if (!this._parentVerified) locked.set(id, labels.parentalPending)
+    }
+    return locked
+  }
+
+  /**
+   * Whether this visitor answered the age gate as under its minimum age, and if so whether a
+   * parent's consent has been verified. `'adult'` covers everyone else, including visitors who
+   * never saw an age gate.
+   */
+  getMinorStatus(): 'adult' | 'minor_pending' | 'minor_verified' {
+    if (this._ageVerified !== false) return 'adult'
+    return this._parentVerified ? 'minor_verified' : 'minor_pending'
+  }
+
+  /**
+   * Asks the server whether a parent's consent has been verified for this visitor (through the
+   * site's parental-consent provider, or the parental-consent token). When it has, the
+   * visitor's optional purposes become available again — except those `blockedForMinors` — and
+   * `consenti:parentalConsentVerified` is dispatched; call `showModal()` to let them choose.
+   * Needs `api.enabled`. Returns `'none'` for a visitor who isn't a minor.
+   */
+  async checkParentalConsent(): Promise<'none' | 'pending' | 'verified' | 'failed'> {
+    if (!isClient() || this._ageVerified !== false) return 'none'
+    if (this._parentVerified) return 'verified'
+    if (!this.config.api?.enabled) return 'pending'
+    try {
+      const base = this.config.api.baseUrl ?? window.location.origin
+      const { httpRequest } = await import('../utils/http')
+      const res = await httpRequest<{ status: 'none' | 'pending' | 'verified' | 'failed' }>(
+        `${base}/consenti/api/v1/consent/${this.visitorId()}/parental-consent`,
+        { method: 'GET' },
+        this.config.api.authToken,
+      )
+      if (res.status !== 'verified') return res.status === 'none' ? 'pending' : res.status
+      this._parentVerified = true
+      // Re-store the current choices so the cookie records the verified status.
+      await this.submitConsent(this.consentStore?.getConsent() ?? {}, false, 1)
+      this.eventBus?.dispatch('consenti:parentalConsentVerified', {
+        profileId: this.profileId(),
+        visitorId: this.visitorId(),
+        timestamp: Math.round(Date.now() / 1000),
+      })
+      return 'verified'
+    } catch (err) {
+      logger.warn('Parental-consent status check failed:', err)
+      return 'pending'
+    }
   }
 
   private isDpdpProfile(): boolean {
@@ -1121,6 +1193,13 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
       }
     }
 
+    // A child: nothing optional until a parent consents, and never the purposes blocked for
+    // minors. Applied here so those trackers never start, whatever was clicked or passed in.
+    if (this._ageVerified === false) {
+      const restricted = restrictConsentForMinor(fullConsent, this.profile.preferenceModal?.categories ?? {}, this.profile.cookies, this._parentVerified, this.profile.ageGate?.blockedPurposes)
+      Object.assign(fullConsent, restricted.consent)
+    }
+
     const consentAction = this.deriveAction(fullConsent, hadExistingConsent)
 
     this.eventBus?.dispatch('consenti:consentBeingSubmitted', {
@@ -1166,7 +1245,10 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
 
     // Sign and write atomically so the signature covers the exact persisted value
     const signingKey = this.profile.cookieSigningKey ?? this.config.core.cookieSigningKey
-    const writeMeta = { source, gpcDetected: gpcDerived, consentId, locale: this.config.core.locale ?? 'en', complianceGroup: this.profile?.complianceGroup }
+    const writeMeta = {
+      source, gpcDetected: gpcDerived, consentId, locale: this.config.core.locale ?? 'en', complianceGroup: this.profile?.complianceGroup,
+      ...(this._ageVerified === false ? { minor: (this._parentVerified ? MINOR_PARENT_VERIFIED : MINOR_PENDING) as MinorCookieStatus } : {}),
+    }
     if (signingKey) {
       this.lastSignature = await this.consentStore.writeAndSign(fullConsent, signingKey, writeMeta)
     } else {
@@ -1326,6 +1408,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     const handlers = this.buildHandlers('modal')
     const existing = this.consentStore?.getConsent() ?? {}
     const dpdpaCfg = this.dpdpNoticeConfig()
+    this.modal.lockCategoriesOff(this.minorLockedCategories())
     const locales = this.profile.locales
     const activeLocale = this.config.core.locale ?? 'en'
     this.modal.build(
@@ -1454,6 +1537,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
     await this.deleteConsent()
     if (resetAgeGate && this.profile?.ageGate?.enabled) {
       this._ageVerified = undefined
+      this._parentVerified = false
       this.showAgeGate(this.profile.ageGate, this.profile)
       return
     }

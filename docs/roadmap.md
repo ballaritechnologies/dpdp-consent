@@ -21,7 +21,7 @@ reviewed by a lawyer before we describe a feature as ready; open points live in
 - Purpose-based retention with automatic erasure jobs
 - CSV and JSON export of all of the above
 
-## v0.3: children and breaches
+## v0.3: children and breaches (children's data hooks built, not yet released)
 
 - Age gate and a pluggable parental-consent provider interface (no identity verification of our
   own); tracking, behavioural and advertising purposes blocked by default for under-18s

@@ -49,6 +49,11 @@ export interface ConsentCookieData {
    * migrated legacy-format cookie, or a local/embedded profile with no server-resolved group).
    */
   k: string
+  /**
+   * Set only for a visitor who answered the age gate as under its minimum age: 1 = parental
+   * consent pending, 2 = parental consent verified. Absent for everyone else.
+   */
+  m?: 1 | 2
 }
 
 /**
@@ -281,6 +286,10 @@ export interface DpdpLabels {
   noticeVersion: string
   reopenButton: string
   reopenAriaLabel: string
+  /** On a purpose a child can never switch on (`ageGate.blockedPurposes`). */
+  minorBlocked: string
+  /** On optional purposes while a child's parental consent is pending. */
+  parentalPending: string
 }
 
 /**
@@ -292,6 +301,13 @@ export interface AgeGateConfig {
   enabled: boolean
   minimumAge: number
   requireParentalConsent?: boolean
+  /**
+   * Purposes (category IDs) never granted to a visitor who answered the age gate as under
+   * `minimumAge`, even after a parent's consent is verified: tracking, behavioural monitoring and
+   * targeted advertising (DPDP Act s.9(3)). Default: every category holding an item whose
+   * `purpose` is `analytics` or `marketing`.
+   */
+  blockedPurposes?: string[]
 }
 
 /** Per-locale age-gate modal text — translated the same way `mainBanner`/`preferenceModal`
@@ -752,6 +768,8 @@ export type ConsentiEventName =
   | 'consenti:consentSubmitted'
   | 'parentalConsentRequired'
   | 'consenti:parentalConsentRequired'
+  | 'parentalConsentVerified'
+  | 'consenti:parentalConsentVerified'
   | 'forgetMeRequested'
   | 'consenti:forgetMeRequested'
   | 'forgotten'
@@ -794,6 +812,13 @@ export interface ConsentiWidgetAPI {
    * host app can hook its own identity-verified erasure workflow. Powers the preference modal's
    * "Forget me" button; also callable directly for a custom placement of the same action. */
   forgetMe(resetAgeGate?: boolean): Promise<void>
+  /** `'minor_pending'` / `'minor_verified'` for a visitor who answered the age gate as under its
+   * minimum age (before / after a parent's consent is verified); `'adult'` for everyone else. */
+  getMinorStatus(): 'adult' | 'minor_pending' | 'minor_verified'
+  /** Asks the server whether a parent's consent is verified for this under-age visitor; on
+   * `'verified'`, unlocks optional purposes (except `blockedForMinors` ones) and dispatches
+   * `consenti:parentalConsentVerified`. Needs `api.enabled`. */
+  checkParentalConsent(): Promise<'none' | 'pending' | 'verified' | 'failed'>
   getRootElement(): HTMLElement | null
   getBannerElement(): HTMLElement | null
   getModalElement(): HTMLElement | null
@@ -928,6 +953,15 @@ export interface ParentalConsentGrantedDetail {
   profileId: string
 }
 
+/** Dispatched by `checkParentalConsent()` once the server reports a parent's consent as verified
+ * for this (under-age) visitor. Optional purposes are available again, except those marked
+ * `blockedForMinors`; nothing has been granted yet. */
+export interface ParentalConsentVerifiedDetail {
+  profileId: string
+  visitorId: string
+  timestamp: number
+}
+
 /** Detail payload for the inbound `consenti:listener:identify` event — dispatched by the *host*
  * page (not the widget) to tell the widget which application user is logged in, equivalent to
  * calling `setUserId(userId, reConsent)`. `reConsent` defaults to `true`. */
@@ -963,6 +997,7 @@ export type ConsentEvent =
   | ConsentSubmittedDetail
   | ParentalConsentRequiredDetail
   | ParentalConsentGrantedDetail
+  | ParentalConsentVerifiedDetail
   | ForgetMeRequestedDetail
   | ForgottenDetail;
 

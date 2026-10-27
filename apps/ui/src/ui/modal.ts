@@ -38,6 +38,8 @@ export class Modal {
   private trapCleanup: (() => void) | null = null
   /** Live per-parameter (cookie id) toggle state — same shape as `ConsentValue`. Source of truth for `getToggleConsent()`. */
   private toggleState = new Map<string, ConsentStatus>()
+  /** Categories shown switched off and locked, with the reason shown under the heading. */
+  private lockedOff = new Map<string, string>()
   /** Per-parameter toggle elements, keyed by cookie id — used to cascade visual updates when the category master toggle is clicked. */
   private paramToggles = new Map<string, HTMLButtonElement>()
   /** Category master toggle elements + their member cookie ids and legal basis, keyed by category id — used to recompute/update the master's rollup state when a member parameter changes. */
@@ -338,13 +340,17 @@ export class Modal {
     const isLI = cat.legalBasis === 'legitimate_interest'
     const isMandatory = cat.legalBasis === 'mandatory'
     const offStatus: ConsentStatus = isLI ? 'objected' : 'denied'
+    const lockedReason = isMandatory ? undefined : this.lockedOff.get(categoryId)
+    const locked = lockedReason !== undefined
 
     // Seed per-parameter state: stored consent wins; otherwise mandatory→granted,
     // LI→granted (on unless objected), consent-basis→preGrant ? granted : denied.
     for (const cookieId of cat.cookies) {
       const stored = initialConsent[cookieId]
       let status: ConsentStatus
-      if (stored !== undefined) {
+      if (locked) {
+        status = 'denied'
+      } else if (stored !== undefined) {
         status = stored
       } else if (isMandatory) {
         status = 'granted'
@@ -379,7 +385,7 @@ export class Modal {
     toggle.setAttribute('role', 'checkbox')
     toggle.setAttribute('aria-checked', rollup === 'allowed' ? 'true' : rollup === 'denied' ? 'false' : 'mixed')
     toggle.setAttribute('aria-labelledby', `consenti-cat-${categoryId}-heading`)
-    if (isMandatory) {
+    if (isMandatory || locked) {
       toggle.setAttribute('aria-disabled', 'true')
       toggle.disabled = true
     }
@@ -387,7 +393,7 @@ export class Modal {
 
     this.categoryToggles.set(categoryId, { el: toggle, cookieIds: cat.cookies, isLI })
 
-    if (!isMandatory) {
+    if (!isMandatory && !locked) {
       toggle.addEventListener('click', () => {
         const current = this.computeRollup(cat.cookies, isLI)
         // Matches native tri-state "select all" checkbox convention: mixed/denied → grant
@@ -404,6 +410,15 @@ export class Modal {
 
     header.appendChild(toggle)
     wrapper.appendChild(header)
+
+    if (locked && lockedReason) {
+      const note = document.createElement('p')
+      note.className = 'consenti-category__locked-note'
+      note.id = `consenti-cat-${categoryId}-locked`
+      note.textContent = lockedReason
+      toggle.setAttribute('aria-describedby', note.id)
+      wrapper.appendChild(note)
+    }
 
     if (isLI && cat.legitimateInterestDescription) {
       const li = document.createElement('p')
@@ -432,7 +447,7 @@ export class Modal {
     const params = document.createElement('div')
     params.className = 'consenti-category__params'
     for (const cookieId of cat.cookies) {
-      params.appendChild(this.buildParamRow(categoryId, cookieId, cookies[cookieId], isMandatory, isLI))
+      params.appendChild(this.buildParamRow(categoryId, cookieId, cookies[cookieId], isMandatory || locked, isLI))
     }
     const hasMultipleParams = cat.cookies.length > 1
     params.classList.add('consenti-d-none')
@@ -580,6 +595,14 @@ export class Modal {
   }
 
   /**
+   * Shows these categories switched off and locked (call before `build()`), each with its reason
+   * — used for a child who may not switch them on. Pass an empty map to clear.
+   */
+  lockCategoriesOff(reasons: Map<string, string>): void {
+    this.lockedOff = new Map(reasons)
+  }
+
+  /**
    * Reads the current per-parameter toggle state and converts it to a `ConsentValue`.
    * The internal state is already keyed by cookie id (built up in `buildCategory`/
    * `buildParamRow` at construction time), so this is close to a direct read —
@@ -592,12 +615,13 @@ export class Modal {
    */
   getToggleConsent(categories: CategoryMap): ConsentValue {
     const consent: ConsentValue = {}
-    for (const cat of Object.values(categories)) {
+    for (const [categoryId, cat] of Object.entries(categories)) {
       const isLI = cat.legalBasis === 'legitimate_interest'
       const isMandatory = cat.legalBasis === 'mandatory'
+      const locked = !isMandatory && this.lockedOff.has(categoryId)
       const fallback: ConsentStatus = isMandatory ? 'granted' : isLI ? 'objected' : 'denied'
       for (const cookieId of cat.cookies) {
-        consent[cookieId] = isMandatory ? 'granted' : (this.toggleState.get(cookieId) ?? fallback)
+        consent[cookieId] = isMandatory ? 'granted' : locked ? 'denied' : (this.toggleState.get(cookieId) ?? fallback)
       }
     }
     return consent

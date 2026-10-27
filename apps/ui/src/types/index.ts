@@ -65,6 +65,7 @@ export type {
   ConsentDbRecord,
   ParentalConsentRequiredDetail,
   ParentalConsentGrantedDetail,
+  ParentalConsentVerifiedDetail,
   IdentifyEventDetail
 } from '@consenti/types'
 

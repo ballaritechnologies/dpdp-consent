@@ -321,6 +321,27 @@ export default function UIMethodsPage() {
           </tr>
           <tr>
             <td>
+              <code>getMinorStatus()</code>
+            </td>
+            <td>
+              <code>&apos;adult&apos; | &apos;minor_pending&apos; | &apos;minor_verified&apos;</code>
+            </td>
+            <td>Whether the visitor answered the age gate as under age, and if a parent&apos;s consent is verified</td>
+          </tr>
+          <tr>
+            <td>
+              <code>checkParentalConsent()</code>
+            </td>
+            <td>
+              <code>Promise&lt;&apos;none&apos; | &apos;pending&apos; | &apos;verified&apos; | &apos;failed&apos;&gt;</code>
+            </td>
+            <td>
+              Asks the server whether a parent&apos;s consent is verified for this child; see the{' '}
+              <a href="/guides/backend/children">Children&apos;s data guide</a>.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <code>destroy()</code>
             </td>
             <td>
@@ -750,6 +771,22 @@ widget.getConsent('category')
         full picture, including the server-side <code>DELETE /consent/:visitorId</code> endpoint
         and its own <code>consent:erased</code> eventBus event.
       </p>
+
+      <h3>getMinorStatus() / checkParentalConsent()</h3>
+      <p>
+        For a visitor who answered the age gate as under its minimum age, every optional purpose
+        stays off until a parent&apos;s consent is verified, and the blocked purposes (analytics and
+        advertising by default) stay off after that too. <code>checkParentalConsent()</code> asks
+        the server (needs <code>api.enabled</code>); on <code>&apos;verified&apos;</code> it unlocks
+        the allowed purposes and dispatches <code>consenti:parentalConsentVerified</code>. It also
+        runs once on page load while consent is pending.
+      </p>
+      <CodeBlock
+        lang="ts"
+        code={`widget.getMinorStatus() // 'adult' | 'minor_pending' | 'minor_verified'
+widget.on('consenti:parentalConsentVerified', () => widget.showModal())
+await widget.checkParentalConsent()`}
+      />
 
       <h3>isCookieGranted(cookieId, requestValue?)</h3>
       <p>

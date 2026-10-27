@@ -662,6 +662,10 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
   const [allowedOrigins, setAllowedOrigins] = useState<string[]>([])
   const [regulations, setRegulations] = useState<string[]>([])
   const [complianceGroup, setComplianceGroup] = useState('')
+  // DPDP treats anyone under 18 as a child: start the age gate there instead of the GDPR default.
+  useEffect(() => {
+    if (complianceGroup === 'opt-in-dpdpa') setAgeGateMinimumAge(age => (age < 18 ? 18 : age))
+  }, [complianceGroup])
   const [customComplianceGroup, setCustomComplianceGroup] = useState('')
   const [gpcMode, setGpcMode] = useState('')
   const [darkMode, setDarkMode] = useState(false)
@@ -1792,7 +1796,7 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
                     <label class="block text-xs font-medium text-gray-700 mb-1">{t('profileEditor.config.ageGateSection.minimumAge')} <span class="text-red-500" aria-hidden="true">*</span></label>
                     <input
                       type="number"
-                      min="1"
+                      min={complianceGroup === 'opt-in-dpdpa' ? '18' : '1'}
                       max="99"
                       class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
                       value={ageGateMinimumAge}
@@ -1802,6 +1806,9 @@ export function ProfileEditor({ id, current }: { id?: string; current: string })
                       }}
                     />
                     <p class="text-[10px] text-gray-400 mt-0.5">{t('profileEditor.config.ageGateSection.minimumAgeHint')}</p>
+                    {complianceGroup === 'opt-in-dpdpa' && (
+                      <p class={`text-[10px] mt-0.5 ${ageGateMinimumAge < 18 ? 'text-red-600' : 'text-amber-700'}`}>{t('profileEditor.config.ageGateSection.dpdpHint')}</p>
+                    )}
                   </div>
                   <label class="flex items-start gap-2.5 mt-5 cursor-pointer select-none">
                     <input

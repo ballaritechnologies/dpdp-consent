@@ -16,6 +16,7 @@ export interface ReceiptEvent {
   categories: CategoryMap
   previous?: ConsentDbRecord | null
   expiredPurposes?: string[]
+  minor?: ConsentReceiptData['minor']
 }
 
 /** The part of ReceiptService that ConsentService depends on. */
@@ -64,6 +65,7 @@ export class ReceiptService implements ReceiptWriter {
       purposes,
       consent,
       ...(e.expiredPurposes?.length ? { expiredPurposes: [...e.expiredPurposes] } : {}),
+      ...(e.minor ? { minor: e.minor } : {}),
     }
     const ref = this.visitorRef(e.visitorId)
     const receipt: ServerConsentReceipt = {

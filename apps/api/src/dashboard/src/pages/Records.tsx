@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
-import type { ErasureRequest, ErasureRequestStatus, ErasureRequestChannel, NoticeVersion, RetentionPolicy, RetentionRunResult } from '@consenti/types'
+import type { ErasureRequest, ErasureRequestStatus, ErasureRequestChannel, NoticeVersion, RetentionPolicy, RetentionRunResult, ParentalConsentRequest } from '@consenti/types'
 import { usePageTitle } from '../context/pageTitle'
 import { useT } from '../context/locale'
 import { useAuth } from '../context/auth'
@@ -11,8 +11,8 @@ import { apiDownload, apiErrorMessage } from '../api/client'
 import { recordsApi, type ReceiptRow, type ErasureList } from '../api/records'
 import type { TranslationKey } from '../utils/t'
 
-type Tab = 'inbox' | 'receipts' | 'notices' | 'retention'
-const TABS: Tab[] = ['inbox', 'receipts', 'notices', 'retention']
+type Tab = 'inbox' | 'receipts' | 'notices' | 'parental' | 'retention'
+const TABS: Tab[] = ['inbox', 'receipts', 'notices', 'parental', 'retention']
 const STATUSES: ErasureRequestStatus[] = ['received', 'verifying', 'in_progress', 'completed', 'rejected']
 const NEXT: Record<ErasureRequestStatus, ErasureRequestStatus[]> = {
   received: ['verifying', 'in_progress', 'completed', 'rejected'],
@@ -62,6 +62,7 @@ export function Records({ current }: { current: string }) {
       {tab === 'inbox' && <Inbox />}
       {tab === 'receipts' && <Receipts />}
       {tab === 'notices' && <Notices />}
+      {tab === 'parental' && <ParentalConsents />}
       {tab === 'retention' && <Retention />}
     </div>
   )
@@ -432,6 +433,113 @@ function Notices() {
         ]}
         emptyText={t('records.notices.empty')}
       />
+    </>
+  )
+}
+
+// ── Parental consent ───────────────────────────────────────────────────────────
+
+function ParentalConsents() {
+  const t = useT()
+  const { user } = useAuth()
+  const canEdit = !!user?.permissions.includes('settings:update')
+  const [rows, setRows] = useState<ParentalConsentRequest[]>([])
+  const [total, setTotal] = useState(0)
+  const [provider, setProvider] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [status, setStatus] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [selected, setSelected] = useState<ParentalConsentRequest | null>(null)
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+
+  const load = () => {
+    setLoading(true)
+    recordsApi.parentalConsents({ page, limit: pageSize, ...(status ? { status } : {}) })
+      .then(r => { setRows(r.items); setTotal(r.total); setProvider(r.provider) })
+      .catch(err => setError(apiErrorMessage(err, t('records.error'))))
+      .finally(() => setLoading(false))
+  }
+  useEffect(load, [page, pageSize, status])
+
+  const decide = async (decision: 'verified' | 'failed') => {
+    if (!selected) return
+    setError('')
+    try {
+      setSelected(await recordsApi.decideParentalConsent(selected.id, { status: decision, ...(note.trim() ? { note: note.trim() } : {}) }))
+      setNote('')
+      load()
+    } catch (err) {
+      setError(apiErrorMessage(err, t('records.error')))
+    }
+  }
+
+  const statusLabel = (s: string | null) => t(`records.parental.status.${s ?? 'pending'}` as TranslationKey)
+
+  return (
+    <>
+      <p class="text-xs text-gray-500">{t('records.parental.hint')} {provider ? t('records.parental.provider', { provider }) : t('records.parental.noProvider')}</p>
+      {error && <p role="alert" class="text-sm text-red-600">{error}</p>}
+      <DataTable
+        loading={loading}
+        rows={rows as unknown as Record<string, unknown>[]}
+        keyFn={r => (r as unknown as ParentalConsentRequest).id}
+        filters={
+          <Select
+            options={[{ value: '', label: t('records.inbox.allStatuses') }, ...(['pending', 'verified', 'failed'] as const).map(s => ({ value: s, label: statusLabel(s) }))]}
+            value={status}
+            onChange={v => { setStatus(v); setPage(1) }}
+          />
+        }
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPage={setPage}
+        onPageSize={n => { setPageSize(n); setPage(1) }}
+        columns={[
+          { key: 'createdAt', label: t('records.col.received'), render: r => fmt((r as unknown as ParentalConsentRequest).createdAt) },
+          { key: 'status', label: t('common.status'), render: r => statusLabel((r as unknown as ParentalConsentRequest).status) },
+          { key: 'method', label: t('records.parental.method'), render: r => (r as unknown as ParentalConsentRequest).data.method ?? '—' },
+          { key: 'ref', label: t('records.visitorRef'), render: r => <span class="font-mono text-xs">{((r as unknown as ParentalConsentRequest).ref ?? '').slice(0, 12)}…</span> },
+          { key: 'id', label: '', render: r => <button class="text-xs text-blue-600 hover:underline" onClick={() => { setSelected(r as unknown as ParentalConsentRequest); setNote('') }}>{t('records.view')}</button> },
+        ]}
+        emptyText={t('records.parental.empty')}
+      />
+      {selected && (
+        <RecordDetailModal
+          open
+          title={t('records.parental.detail')}
+          onClose={() => setSelected(null)}
+          fields={[
+            { label: t('common.status'), value: statusLabel(selected.status) },
+            { label: t('records.col.received'), value: fmt(selected.createdAt) },
+            { label: t('records.profile'), value: <span class="font-mono text-xs">{selected.data.profileId}</span> },
+            { label: t('records.parental.method'), value: selected.data.method ?? '—' },
+            {
+              label: t('records.inbox.history'), value: (
+                <ol class="text-xs space-y-1">
+                  {selected.data.history.map((h, i) => (
+                    <li key={i}>{fmt(h.at)} — {statusLabel(h.status)} ({h.source}){h.actorId ? ` ${h.actorId.slice(0, 8)}` : ''}{h.note ? `: ${h.note}` : ''}</li>
+                  ))}
+                </ol>
+              ),
+            },
+            ...(canEdit && selected.status === 'pending' ? [{
+              label: t('records.inbox.change'), value: (
+                <div class="space-y-2">
+                  <p class="text-xs text-gray-500">{t('records.parental.manualHint')}</p>
+                  <textarea aria-label={t('records.note')} placeholder={t('records.parental.note')} class={input} rows={2} maxLength={2000} value={note} onInput={e => setNote((e.target as HTMLTextAreaElement).value)} />
+                  <div class="flex gap-2">
+                    <button class={btn} onClick={() => { void decide('verified') }}>{t('records.parental.markVerified')}</button>
+                    <button class={btnGhost} onClick={() => { void decide('failed') }}>{t('records.parental.markFailed')}</button>
+                  </div>
+                </div>
+              ),
+            }] : []),
+          ]}
+        />
+      )}
     </>
   )
 }

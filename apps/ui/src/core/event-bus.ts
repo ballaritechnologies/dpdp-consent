@@ -34,6 +34,7 @@ export type EventName =
   | 'consenti:closeRequest'
   | 'consenti:parentalConsentRequired'
   | 'consenti:parentalConsentResolved'
+  | 'consenti:parentalConsentVerified'
   | 'consenti:forgetMeRequested'
   | 'consenti:forgotten'
 

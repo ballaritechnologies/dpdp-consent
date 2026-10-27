@@ -2152,6 +2152,18 @@ handleCache: async (paths, _profileId, isPurge) => {
         </li>
       </ul>
 
+      {/* ── parentalConsentProvider ──────────────────────────────────────── */}
+      <h2>compliance.parentalConsentProvider</h2>
+      <p>
+        A <code>ParentalConsentProvider</code> (<code>id</code>, <code>start()</code>,{' '}
+        <code>check()</code>) that verifies a parent&apos;s or guardian&apos;s consent for a child.
+        Unset: requests are still recorded, and verified through the signed token or by staff in
+        the dashboard. <code>MockParentalConsentProvider</code> is for development only. Also on
+        a profile&apos;s <code>ageGate</code>: <code>blockedPurposes</code>, the category IDs never
+        granted to a child (default: categories holding analytics or advertising items). See the{' '}
+        <a href="/guides/backend/children">Children&apos;s data guide</a>.
+      </p>
+
       {/* ── ageGate ──────────────────────────────────────────────────────── */}
       <h2>Age gate (per-profile, not a createConsenti() option)</h2>
       <p>

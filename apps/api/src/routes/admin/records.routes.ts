@@ -20,6 +20,7 @@ import {
   type ErasureRequestService,
 } from '../../services/erasure-request.service'
 import { RetentionPolicyError, type RetentionService } from '../../services/retention.service'
+import { ParentalConsentError, type ParentalConsentService } from '../../services/parental-consent.service'
 
 const RECEIPT_ACTIONS: readonly ConsentReceiptAction[] = ['given', 'updated', 'withdrawn', 'expired', 'erased']
 const EXPORT_PAGE = 1000
@@ -29,6 +30,7 @@ export interface RecordServices {
   noticeVersions: NoticeVersionService
   erasure: ErasureRequestService
   retention: RetentionService
+  parentalConsent?: ParentalConsentService
 }
 
 function isoParam(url: URL, key: string): string | undefined | Response {
@@ -56,7 +58,7 @@ export function buildAdminRecordRoutes(
   secret: string,
   services: RecordServices,
 ) {
-  const { receipts, noticeVersions, erasure, retention } = services
+  const { receipts, noticeVersions, erasure, retention, parentalConsent } = services
 
   async function guard(req: Request, permission: string): Promise<{ user: AuthenticatedUser; tenantId: string } | Response> {
     const user = await authenticate(req, storage, authConfig, secret)
@@ -254,6 +256,34 @@ export function buildAdminRecordRoutes(
         const body = await parseJsonBody<Record<string, unknown>>(req) ?? {}
         const dryRun = body['dryRun'] !== false
         return json(200, await retention.run(g.tenantId, { dryRun, actorId: g.user.sub }))
+      }),
+
+    // ── Parental consent ───────────────────────────────────────────────────────
+    'GET /parental-consents': async (req: Request): Promise<Response> =>
+      withErrorHandler(async () => {
+        const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
+        if (!parentalConsent) return errorResponse(404, 'Not found')
+        const url = new URL(req.url)
+        const p = getPagination(url); if ('error' in p) return errorResponse(400, p.error)
+        const status = url.searchParams.get('status') ?? undefined
+        if (status && !['pending', 'verified', 'failed'].includes(status)) return errorResponse(400, 'Unknown status')
+        const { items, total } = await parentalConsent.list(g.tenantId, status, { limit: p.limit, offset: (p.page - 1) * p.limit })
+        return json(200, { items, total, page: p.page, limit: p.limit, provider: parentalConsent.providerId })
+      }),
+
+    'PATCH /parental-consents/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
+      withErrorHandler(async () => {
+        const g = await guard(req, 'settings:update'); if (g instanceof Response) return g
+        if (!parentalConsent) return errorResponse(404, 'Not found')
+        const body = await parseJsonBody<Record<string, unknown>>(req)
+        if (!body || typeof body !== 'object') return errorResponse(400, 'Invalid JSON body')
+        const note = body['note'] === undefined || body['note'] === null ? null : body['note']
+        try {
+          return json(200, await parentalConsent.decide(g.tenantId, params['id'] ?? '', body['status'] as 'verified' | 'failed', g.user.sub, note as string | null))
+        } catch (err) {
+          if (err instanceof ParentalConsentError) return errorResponse(err.status, err.message)
+          throw err
+        }
       }),
 
     // ── Exports ────────────────────────────────────────────────────────────────

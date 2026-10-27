@@ -14,6 +14,7 @@ import {
 } from '../../validators/consent.validator'
 import { randomVisitorId } from '../../utils/crypto'
 import { ErasureRequestError, type ErasureRequestService } from '../../services/erasure-request.service'
+import { ParentalConsentError, type ParentalConsentService } from '../../services/parental-consent.service'
 
 // Verify that the request's cookie contains a valid consenti_<visitorId> token,
 // proving the caller is the actual visitor who originally submitted consent.
@@ -40,6 +41,7 @@ export function buildConsentRoutes(
   eventBus?: EventEmitter,
   parentalConsentTokenTtlDays = 7,
   erasureRequests?: ErasureRequestService,
+  parentalConsent?: ParentalConsentService,
 ) {
   return {
     'POST /consent': async (request: Request, _params: Record<string, string>): Promise<Response> =>
@@ -208,8 +210,27 @@ export function buildConsentRoutes(
 
         const token = buildParentalConsentToken(visitorId, profileId, dataSigningHash)
         const issuedAt = Math.round(Date.now() / 1000)
-        eventBus?.emit('consent.parentalConsentRequired', { visitorId, profileId, token, issuedAt })
-        return json(200, { token })
+        // Recorded (and started with the configured provider, if any) before the event, so a
+        // listener can already look the request up.
+        let started = null
+        if (parentalConsent) {
+          const locale = typeof body['locale'] === 'string' && body['locale'].length <= 35 ? body['locale'] : null
+          try {
+            started = await parentalConsent.request(await resolveTenantId(request), visitorId, profileId, locale)
+          } catch (err) {
+            if (err instanceof ParentalConsentError) return errorResponse(err.status, err.message)
+            throw err
+          }
+        }
+        eventBus?.emit('consent.parentalConsentRequired', { visitorId, profileId, token, issuedAt, ...(started ? { requestId: started.id } : {}) })
+        return json(200, {
+          token,
+          ...(started ? {
+            requestId: started.id, status: started.status,
+            ...(started.data.redirectUrl ? { redirectUrl: started.data.redirectUrl } : {}),
+            ...(started.data.message ? { message: started.data.message } : {}),
+          } : {}),
+        })
       }),
 
     'POST /consent/parental-consent-resolve': async (request: Request): Promise<Response> =>
@@ -221,8 +242,24 @@ export function buildConsentRoutes(
         const result = verifyParentalConsentToken(token, dataSigningHash, parentalConsentTokenTtlDays)
         if (!result.valid) return errorResponse(403, `Invalid or expired token (${result.reason})`)
 
+        await parentalConsent?.verifyByToken(await resolveTenantId(request), result.visitorId, result.profileId)
         eventBus?.emit('consent.parentalConsentGranted', { visitorId: result.visitorId, profileId: result.profileId })
         return json(200, { visitorId: result.visitorId, profileId: result.profileId })
+      }),
+
+    // The visitor's own browser asks whether a parent's consent has been verified yet.
+    'GET /consent/:visitorId/parental-consent': async (request: Request, params: Record<string, string>): Promise<Response> =>
+      withErrorHandler(async () => {
+        const visitorId = params['visitorId']
+        if (!visitorId) return errorResponse(400, 'Missing visitorId')
+        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        if (ownershipError) return ownershipError
+        const latest = parentalConsent ? await parentalConsent.latest(await resolveTenantId(request), visitorId) : null
+        if (!latest) return json(200, { status: 'none' })
+        return json(200, {
+          status: latest.status, requestId: latest.id,
+          ...(latest.status === 'pending' && latest.data.redirectUrl ? { redirectUrl: latest.data.redirectUrl } : {}),
+        })
       }),
   }
 }

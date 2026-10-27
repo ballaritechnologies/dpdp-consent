@@ -1322,7 +1322,7 @@ When **changing parameters or categories** on a Consent Template, the backend re
 | `profile.deactivated` | `Profile` | Profile deactivated (locale JSON files removed from the hot-serve path) |
 | `cache:warm` | `{ paths: string[], profileId: string }` | Fired after locale JSON files are written; paths to warm in CDN/cache |
 | `cache:purge` | `{ paths: string[], profileId: string }` | Fired after locale JSON files are removed; paths to purge from CDN/cache |
-| `consent.parentalConsentRequired` | `{ visitorId, profileId, token, issuedAt }` | Age gate declined with `requireParentalConsent: true` — see [Parental consent request/resolve](#parental-consent-request-resolve-stateless-hook) below |
+| `consent.parentalConsentRequired` | `{ visitorId, profileId, token, issuedAt, requestId? }` | Age gate declined with `requireParentalConsent: true` — see [Parental consent request/resolve](#parental-consent-request-resolve-stateless-hook) below |
 | `consent.parentalConsentGranted` | `{ visitorId, profileId }` | `POST /consent/parental-consent-resolve` succeeded — see the same section |
 
 Note the inconsistent separator: most events use `:` (`profile:created`), but the activation and
@@ -1521,7 +1521,7 @@ eventBus.on('consent.parentalConsentRequired', ({ visitorId, profileId, token })
 })
 ```
 
-The parent's own click/flow eventually calls `POST /consent/parental-consent-resolve` with `{ token }` — either directly, or via the widget's `resolveParentalConsent(token)` export (`@consenti/ui`) if the parent lands on a page with the widget script loaded. On success the server emits `consent.parentalConsentGranted`; your backend listener decides what "granted" actually means for stored consent (this package doesn't update it automatically):
+The parent's own click/flow eventually calls `POST /consent/parental-consent-resolve` with `{ token }` — either directly, or via the widget's `resolveParentalConsent(token)` export (`@consenti/ui`) if the parent lands on a page with the widget script loaded. On success the server marks the visitor's parental-consent request verified (method `site_token`) and emits `consent.parentalConsentGranted`. The visitor's consent itself is not changed: the child's widget picks up the verified status (`checkParentalConsent()`) and lets them choose again, within the limits below:
 
 ```ts
 eventBus.on('consent.parentalConsentGranted', async ({ visitorId, profileId }) => {
@@ -1531,8 +1531,29 @@ eventBus.on('consent.parentalConsentGranted', async ({ visitorId, profileId }) =
 
 **Signing**: the request/resolve tokens are signed with `compliance.dataSigningHash` — the same key used for consent-record signing above. It's auto-generated in memory if unset, so tokens are always signed — but with an ephemeral, unpersisted key unless you set `dataSigningHash` explicitly, meaning a server restart between issuing and resolving a token invalidates it. Set `dataSigningHash` (`CONSENTI_DATA_SIGNING_HASH`) before using this in production. Token expiry defaults to 7 days, configurable via `compliance.parentalConsentTokenTtlDays`.
 
+### Children: enforcement, records and providers
+
+A consent record with `ageVerified: false` belongs to a child. On every write the server:
+
+- denies every optional item until the visitor's latest parental-consent request is `verified`;
+- always denies the blocked purposes: the profile's `ageGate.blockedPurposes`, or by default every category holding an `analytics` or `marketing` item;
+- adds `minor: 'parental_consent_pending' | 'parental_consent_verified'` to the consent receipt.
+
+Each parental-consent request is recorded (`parental_consent` entity, hashed visitor ID only) with its history. It becomes `verified` or `failed` through the configured provider, the signed token above, or staff in the dashboard (**Records → Parental consent**, `PATCH /parental-consents/:id`). The visitor's browser polls `GET /consent/:visitorId/parental-consent`.
+
+Ijazat does no identity verification. To use a verification service, implement `ParentalConsentProvider` (`start()` / `check()`, see `@consenti/types`) and pass it as `compliance.parentalConsentProvider`. For development, `MockParentalConsentProvider` (exported from `@consenti/api`) verifies nothing: call `approve(ref)` / `reject(ref)`, or pass `{ autoApprove: true }`. It refuses to start with `NODE_ENV=production`.
+
+```ts
+import { createConsenti, MockParentalConsentProvider } from '@consenti/api'
+
+const parental = new MockParentalConsentProvider()
+createConsenti({ compliance: { parentalConsentProvider: parental } })
+```
+
+A DPDP profile (`opt-in-dpdpa`) with an enabled age gate must use `minimumAge` 18 or more; the profile routes reject anything lower. Details and open legal points: [docs/children.md](../../docs/children.md).
+
 **Important caveats**:
-- Token **replay isn't prevented** — there's no persistence to mark a token "used," an accepted tradeoff of staying fully stateless (no new DB entity, no `StorageAdapter` changes across all 7 storage adapters for what's meant to be a thin plumbing hook).
+- Token **replay isn't prevented**: the token itself is stateless. Resolving it twice is harmless (the request is already `verified`), but anyone holding a valid token can resolve it until it expires, so send it only to the parent.
 - This mechanism is **not by itself sufficient verifiable parental consent** under COPPA or similar regimes. Mainstream CMPs (OneTrust, Cookiebot, Usercentrics, TrustArc, Osano) don't build verifiable-parental-consent workflows into the widget either — a CMP has no way to actually verify the clicker is the parent. This is plumbing to let you wire up your own verification method (signed form, ID check, "email plus," video call — whatever your legal counsel requires), not a claim that clicking a link constitutes legally-sufficient VPC.
 
 ---

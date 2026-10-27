@@ -4,7 +4,7 @@ import type {
 } from '@consenti/types'
 import type { RecordProfileRef } from '../core/consent-engine'
 import { buildConsentValue, verifyConsent, validateConsentInput, buildTcfPayload, buildConsentSignaturePayload } from '../core/consent-engine'
-import { buildCookieCategoryIndex, encodeTcString } from '@consenti/utils'
+import { buildCookieCategoryIndex, encodeTcString, restrictConsentForMinor } from '@consenti/utils'
 import { getGvl } from '../tcf/gvl-cache'
 import { encodeRealTcString } from '../tcf/real-tc-string'
 import { isRegistrationConfirmed } from '../tcf/registration-confirmation'
@@ -35,7 +35,21 @@ export class ConsentService {
     private gppConfig?: GppConfig,
     private archivedSnapshot?: (profileId: string, version?: number) => Promise<PublicProfileResponse | null>,
     private receipts?: ReceiptWriter,
+    private minors?: { isParentVerified(tenantId: string, visitorId: string): Promise<boolean> },
   ) { }
+
+  /**
+   * A child (a visitor who answered the age gate as under age): no optional purpose until a
+   * parent's consent is verified, and never the blocked ones. Enforced here as well as in the
+   * widget so a crafted request can't grant them.
+   */
+  private async restrictForMinor(
+    visitorId: string, consent: ConsentDbRecord['consentJson'], pj: ProfileConfig, cookies: CookieMap, categories: CategoryMap,
+  ): Promise<{ consent: ConsentDbRecord['consentJson']; parentVerified: boolean }> {
+    const parentVerified = await this.minors?.isParentVerified(this.tenantId, visitorId) ?? false
+    const restricted = restrictConsentForMinor(consent, categories, cookies, parentVerified, pj.ageGate?.blockedPurposes)
+    return { consent: restricted.consent, parentVerified }
+  }
 
   private sign(payload: { tenantId: string; visitorId: string; profileId: string; locale: string; consentJson: ConsentDbRecord['consentJson'] }): string | undefined {
     if (!this.dataSigningHash) return undefined
@@ -113,13 +127,22 @@ export class ConsentService {
     const validation = validateConsentInput({ ...input, consentJson: effectiveConsent }, profileCookies, categoryIndex)
     if (!validation.valid) throw new Error(validation.errors.join('; '))
 
-    const builtConsent = buildConsentValue(
+    let builtConsent = buildConsentValue(
       profileCookies,
       categoryIndex,
       effectiveConsent,
       input.gpcDetected,
       regulation,
     )
+
+    const existing = await this.consents.get(input.visitorId)
+    const isMinor = (input.ageVerified ?? existing?.ageVerified) === false
+    let parentVerified = false
+    if (isMinor) {
+      const r = await this.restrictForMinor(input.visitorId, builtConsent, profile.profileJson, profileCookies, categories)
+      builtConsent = r.consent
+      parentVerified = r.parentVerified
+    }
 
     let tcfString: string | undefined
     const tcfConfig = this.tcfConfig
@@ -216,7 +239,6 @@ export class ConsentService {
     // After the plugin hook, so no plugin can drop it — with profileId it pins the exact snapshot shown.
     baseInput = { ...baseInput, profileVersion: profile.version }
 
-    const existing = await this.consents.get(input.visitorId)
     let record: ConsentDbRecord
 
     if (existing) {
@@ -240,6 +262,7 @@ export class ConsentService {
     await this.receipts?.record({
       tenantId: record.tenantId, visitorId: input.visitorId, action: existing ? 'updated' : 'given',
       record, profile, categories, previous: existing,
+      ...(isMinor ? { minor: parentVerified ? 'parental_consent_verified' as const : 'parental_consent_pending' as const } : {}),
     })
 
     if (existing) {
@@ -283,13 +306,20 @@ export class ConsentService {
       }
     }
 
-    const builtConsent = buildConsentValue(
+    let builtConsent = buildConsentValue(
       profileCookies2,
       categoryIndex2,
       effectiveConsent,
       effectiveGpc,
       regulation,
     )
+    const isMinor = existing.ageVerified === false
+    let parentVerified = false
+    if (isMinor) {
+      const r = await this.restrictForMinor(visitorId, builtConsent, profile.profileJson, profileCookies2, categories2)
+      builtConsent = r.consent
+      parentVerified = r.parentVerified
+    }
 
     const signature = this.sign({
       tenantId: this.tenantId, visitorId, profileId: existing.profileId,
@@ -318,6 +348,7 @@ export class ConsentService {
       tenantId: record.tenantId, visitorId, action: receipt.action ?? 'updated',
       record, profile, categories: categories2, previous: existing,
       ...(receipt.expiredPurposes ? { expiredPurposes: receipt.expiredPurposes } : {}),
+      ...(isMinor ? { minor: parentVerified ? 'parental_consent_verified' as const : 'parental_consent_pending' as const } : {}),
     })
     this.eventBus?.emit('consent:updated', { previous: existing, current: record })
     await this.pluginEngine?.runAfterConsentUpdate(record)

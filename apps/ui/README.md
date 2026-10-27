@@ -477,6 +477,34 @@ the full caveats (token replay isn't prevented, staying stateless is a deliberat
 The prompt only asks once per visitor per profile — it doesn't re-appear once any consent record
 exists (same "already decided" check the banner itself uses).
 
+### What a child may consent to
+
+A visitor who answers the age gate as under `minimumAge` is treated as a child from then on (the
+answer is kept in the consent cookie as `m`, so it survives reloads):
+
+- **Until a parent's consent is verified**, every optional purpose stays off. The preferences
+  panel shows those purposes switched off and locked, with a short note, and `submitConsent()` /
+  `grantAll()` cannot switch them on.
+- **After verification**, optional purposes are available again, except the blocked ones:
+  `ageGate.blockedPurposes` (category IDs) on the profile, or by default every category that
+  holds an item whose `purpose` is `analytics` or `marketing` (tracking, behavioural monitoring and
+  targeted advertising; DPDP Act s.9(3)).
+- The server enforces the same rules, so a crafted request can't grant them either.
+
+```ts
+widget.getMinorStatus()            // 'adult' | 'minor_pending' | 'minor_verified'
+await widget.checkParentalConsent() // 'none' | 'pending' | 'verified' | 'failed' (needs api.enabled)
+widget.on('consenti:parentalConsentVerified', () => widget.showModal())
+```
+
+`checkParentalConsent()` runs once automatically on page load while consent is pending. With
+`api.enabled`, the parental-consent request is recorded on the server and, when the site configures
+a `parentalConsentProvider`, started with it; the request response carries the provider's
+`redirectUrl` for the parent, if it gives one. Ijazat performs no identity verification itself.
+
+On a DPDP profile (`opt-in-dpdpa`) the server rejects an enabled age gate with `minimumAge` below
+18. See [docs/children.md](../../docs/children.md).
+
 ---
 
 ## TCF — IAB Transparency & Consent Framework
@@ -831,6 +859,8 @@ widget.switchLocale(locale)      // switch locale and re-render (e.g. 'fr', 'de-
 widget.submitConsent(consent)    // programmatically submit consent values
 widget.deleteConsent()           // delete consent record (cookie + backend if enabled)
 widget.reConsent()               // delete consent and re-show banner
+widget.getMinorStatus()          // 'adult' | 'minor_pending' | 'minor_verified' (age gate)
+await widget.checkParentalConsent() // ask the server whether a parent's consent is verified
 widget.destroy()                 // unmount DOM elements and remove all event listeners
 
 // Logged-in user identity

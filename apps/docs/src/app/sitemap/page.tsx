@@ -253,6 +253,11 @@ const GROUPS: SitemapGroup[] = [
         desc: 'Receipts, notice versions, deletion requests, retention',
       },
       {
+        href: '/guides/backend/children',
+        label: "Children's data",
+        desc: 'Age gate, parental consent, blocked purposes',
+      },
+      {
         href: '/guides/backend/storage',
         label: 'Storage',
         desc: 'Storage adapters and data persistence',

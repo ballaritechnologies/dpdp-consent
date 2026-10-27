@@ -303,6 +303,54 @@ describe('DPDP flow in the browser', () => {
     }
   })
 
+  test('a child: everything optional stays off and locked, and the status survives a reload', async () => {
+    if (!browser) throw new Error(`Chromium is required for this test: ${launchError}`)
+    const config = {
+      compliance: { type: 'opt-in-dpdpa' }, core: { locale: 'en' }, autoInit: true,
+      profileOverride: { dpdpa: DPDPA, ageGate: { enabled: true, minimumAge: 18, requireParentalConsent: true } },
+    }
+    const context = await browser.newContext({ reducedMotion: 'reduce' })
+    const page = await context.newPage()
+    try {
+      await page.goto(`${base}/?config=${encodeURIComponent(JSON.stringify(config))}`)
+      await page.waitForSelector('#consenti-age-gate')
+      assert.match((await page.textContent('#consenti-age-gate'))!, /18/)
+      await page.locator('#consenti-age-gate button', { hasText: 'No' }).click()
+      await page.waitForFunction(() => (window as unknown as { __ready?: boolean }).__ready)
+      type W = { __widget: { getMinorStatus(): string; submitConsent(c: Record<string, string>): Promise<void>; getConsent(): Record<string, string>; showModal(): void } }
+      assert.equal(await page.evaluate(() => (window as unknown as W).__widget.getMinorStatus()), 'minor_pending')
+
+      const categories = DEFAULT_PROFILES['opt-in-dpdpa'].translations['en']!.preferenceModal.categories
+      const optional = Object.values(categories).filter(c => c.legalBasis !== 'mandatory').flatMap(c => c.cookies)
+      const consent = await page.evaluate(async (ids) => {
+        const w = (window as unknown as W).__widget
+        await w.submitConsent(Object.fromEntries(ids.map(id => [id, 'granted'])))
+        return w.getConsent()
+      }, optional)
+      for (const id of optional) assert.equal(consent[id], 'denied', `${id} stays off for a child`)
+      const stored = (await context.cookies()).find(c => c.name === 'consenti_data')
+      assert.match(decodeURIComponent(stored!.value), /"m":1/)
+
+      // Close the parental-consent message, then the panel shows optional purposes locked off.
+      await page.locator('#consenti-age-gate button').first().click().catch(() => {})
+      await page.evaluate(() => (window as unknown as W).__widget.showModal())
+      await page.waitForSelector('#consenti-modal')
+      const toggle = page.locator('#consenti-modal .consenti-category__toggle[aria-labelledby="consenti-cat-analytics-heading"]')
+      assert.equal(await toggle.isDisabled(), true)
+      assert.equal(await toggle.getAttribute('aria-checked'), 'false')
+      assert.equal((await page.textContent('#consenti-cat-analytics-locked'))?.trim(), DPDP_LABELS['en']!.minorBlocked)
+      assert.equal((await page.textContent('#consenti-cat-functional-locked'))?.trim(), DPDP_LABELS['en']!.parentalPending)
+      assert.equal(await page.locator('#consenti-cat-necessary-locked').count(), 0)
+
+      await page.reload()
+      await page.waitForFunction(() => (window as unknown as { __ready?: boolean }).__ready)
+      assert.equal(await page.locator('#consenti-age-gate').count(), 0)
+      assert.equal(await page.evaluate(() => (window as unknown as W).__widget.getMinorStatus()), 'minor_pending')
+    } finally {
+      await context.close()
+    }
+  })
+
   test('the control survives a reload for a returning visitor', async () => {
     const page = await open('hi')
     try {

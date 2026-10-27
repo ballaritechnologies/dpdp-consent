@@ -876,6 +876,18 @@ fetch(\`/consenti/api/v1/resolve-profile?data=\${encodeURIComponent(data)}\`)`,
         <code>message</code> (≤ 2000). Returns <code>201</code> with <code>id</code>,{' '}
         <code>status</code> and <code>dueAt</code>. See the <a href="/guides/backend/records">Records guide</a>.
       </p>
+      <h3>
+        <Method m="GET" /> <code>/consent/:visitorId/parental-consent</code>
+      </h3>
+      <p>
+        Status of the latest parental-consent request for a child (<code>none</code>,{' '}
+        <code>pending</code>, <code>verified</code>, <code>failed</code>), refreshed from the
+        provider while pending. Needs the visitor&apos;s ownership cookie. The request route below
+        now also returns <code>requestId</code>, <code>status</code> and, when the provider gives
+        them, <code>redirectUrl</code> and <code>message</code>. See the{' '}
+        <a href="/guides/backend/children">Children&apos;s data guide</a>.
+      </p>
+
 
 
       <h3>

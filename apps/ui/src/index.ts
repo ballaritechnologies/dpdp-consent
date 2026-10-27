@@ -67,6 +67,7 @@ export type {
   TcfWidgetConfig,
   ParentalConsentRequiredDetail,
   ParentalConsentGrantedDetail,
+  ParentalConsentVerifiedDetail,
   IdentifyEventDetail,
   VisitorIdentity,
 } from './types'

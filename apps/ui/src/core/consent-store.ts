@@ -101,7 +101,7 @@ function parseLegacyCookieValue(value: string): ParsedConsent | null {
 
 // ─── ConsentStore ─────────────────────────────────────────────────────────────
 
-type WriteMeta = { source?: number; gpcDetected?: boolean; consentId?: string; locale?: string; complianceGroup?: string | undefined }
+type WriteMeta = { source?: number; gpcDetected?: boolean; consentId?: string; locale?: string; complianceGroup?: string | undefined; minor?: 1 | 2 }
 
 /**
  * Manages reading and writing the `consenti_data` consent cookie for a single visitor.
@@ -307,6 +307,15 @@ export class ConsentStore {
     return decodeConsent(raw)?.i ?? null
   }
 
+  /** Minor status recorded with the stored consent (`m`): 1 = parental consent pending,
+   * 2 = verified; `null` for everyone else or when no consent exists. */
+  getMinorStatus(): 1 | 2 | null {
+    if (this.cachedData) return this.cachedData.m ?? null
+    const raw = this.storage.read(this.cookieName)
+    if (!raw) return null
+    return decodeConsent(raw)?.m ?? null
+  }
+
   /** Returns the locale recorded with the stored consent (`l` field), or `null` if unset/no consent exists. */
   getConsentLocale(): string | null {
     if (this.cachedData) return this.cachedData.l || null
@@ -331,6 +340,7 @@ export class ConsentStore {
       c: compressConsent(consent),
       l: this.cachedData?.l ?? '',
       k: this.cachedData?.k ?? '',
+      ...(this.cachedData?.m ? { m: this.cachedData.m } : {}),
     }
   }
 
@@ -360,6 +370,7 @@ export class ConsentStore {
       c: compressConsent(consent),
       l: meta.locale ?? '',
       k: meta.complianceGroup ?? '',
+      ...(meta.minor ? { m: meta.minor } : {}),
     }
   }
 

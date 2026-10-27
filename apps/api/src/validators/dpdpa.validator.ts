@@ -1,8 +1,9 @@
 import { isSafeLocale } from '../utils/path-segment'
+import { DPDP_CHILD_AGE } from '@consenti/utils'
 
 const LABEL_KEYS = new Set([
   'draftBadge', 'dataFiduciary', 'purposes', 'purposeAlwaysOn', 'grievance', 'grievanceLink',
-  'withdraw', 'noticeVersion', 'reopenButton', 'reopenAriaLabel',
+  'withdraw', 'noticeVersion', 'reopenButton', 'reopenAriaLabel', 'minorBlocked', 'parentalPending',
 ])
 
 const MAX_TEXT = 500
@@ -51,6 +52,28 @@ export function findDpdpaProblem(dpdpa: unknown): string | null {
         if (problem) return problem
       }
     }
+  }
+  return null
+}
+
+/**
+ * Age-gate problem for a profile: `minimumAge` must be a whole number from 1 to 120, and a DPDP
+ * profile (`complianceGroup: 'opt-in-dpdpa'`) can't set it below 18, the Act's age of a child.
+ * TODO(legal): Q-C1 — confirm 18 applies to every DPDP site and whether any exemption changes it.
+ */
+export function findAgeGateProblem(profileJson: unknown): string | null {
+  if (!profileJson || typeof profileJson !== 'object') return null
+  const pj = profileJson as Record<string, unknown>
+  const gate = pj['ageGate']
+  if (gate === undefined || gate === null) return null
+  if (typeof gate !== 'object' || Array.isArray(gate)) return 'ageGate must be an object'
+  const g = gate as Record<string, unknown>
+  if (typeof g['enabled'] !== 'boolean') return 'ageGate.enabled must be a boolean'
+  const age = g['minimumAge']
+  if (typeof age !== 'number' || !Number.isInteger(age) || age < 1 || age > 120) return 'ageGate.minimumAge must be a whole number from 1 to 120'
+  if (g['requireParentalConsent'] !== undefined && typeof g['requireParentalConsent'] !== 'boolean') return 'ageGate.requireParentalConsent must be a boolean'
+  if (pj['complianceGroup'] === 'opt-in-dpdpa' && g['enabled'] === true && age < DPDP_CHILD_AGE) {
+    return `ageGate.minimumAge must be at least ${DPDP_CHILD_AGE} on a DPDP profile: the DPDP Act treats anyone under ${DPDP_CHILD_AGE} as a child`
   }
   return null
 }

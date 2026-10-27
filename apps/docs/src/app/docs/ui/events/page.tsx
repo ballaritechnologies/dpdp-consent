@@ -84,6 +84,17 @@ export default function UIEventsPage() {
           </tr>
           <tr>
             <td>
+              <code>consenti:parentalConsentVerified</code>
+            </td>
+            <td>
+              <code>checkParentalConsent()</code> found a parent&apos;s consent verified for this
+              child — <code>{'{ profileId, visitorId, timestamp }'}</code>. Optional purposes are
+              available again, except the blocked ones; see the{' '}
+              <a href="/guides/backend/children">Children&apos;s data guide</a>.
+            </td>
+          </tr>
+          <tr>
+            <td>
               <code>consenti:forgetMeRequested</code>
             </td>
             <td>

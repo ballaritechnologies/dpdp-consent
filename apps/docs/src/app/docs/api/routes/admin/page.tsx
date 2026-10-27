@@ -2112,7 +2112,9 @@ ${AUTH_HEADER}
         <code>PUT /retention/policy</code>, <code>POST /retention/run</code>) and their exports
         (<code>/export/receipts</code>, <code>/export/erasure-requests</code>,{' '}
         <code>/export/notice-versions</code>). Payloads, permissions and behaviour:{' '}
-        <a href="/guides/backend/records">Records guide</a>.
+        <a href="/guides/backend/records">Records guide</a>. Parental-consent requests:{' '}
+        <code>GET /parental-consents</code> and <code>PATCH /parental-consents/:id</code> (see the{' '}
+        <a href="/guides/backend/children">Children&apos;s data guide</a>).
       </p>
 
       {/* ── Stats ────────────────────────────────────────────────── */}

@@ -122,6 +122,11 @@ const BACKEND_GUIDES = [
     desc: 'Signed consent receipts, notice version history, a deletion-request inbox and purpose-based retention.',
   },
   {
+    href: '/guides/backend/children',
+    title: "Children's Data (Age Gate & Parental Consent)",
+    desc: 'What a child may consent to, parental-consent requests, and plugging in a verification provider.',
+  },
+  {
     href: '/guides/backend/storage',
     title: 'Choosing a Storage Driver',
     desc: 'Compare JSON, SQLite, PostgreSQL, MySQL, and MongoDB — and when to use each.',

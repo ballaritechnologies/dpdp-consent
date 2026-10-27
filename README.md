@@ -33,6 +33,10 @@ checker that lists consent gaps on any site.
 - **Records:** a signed receipt for every consent decision (purposes, notice version, language,
   time, hashed visitor ID), notice version history, a deletion-request inbox with due dates and an
   audit trail, purpose-based retention with a daily job, and CSV/JSON export of all of it.
+- **Children's data hooks:** an age gate per profile (18 on DPDP profiles); a child gets no
+  optional purposes until a parent's consent is verified and never analytics or advertising;
+  parental-consent requests with a pluggable verification provider interface (no identity
+  verification built in).
 - **Everything from Consenti:** banner and preferences panel, consent storage and REST API, admin
   dashboard with roles, append-only audit log, CSV/JSON/XLSX export, visitor erasure, Google
   Consent Mode v2, GPC, React/Vue/Angular hooks, SQLite/Postgres/MySQL/MongoDB storage.
@@ -118,6 +122,7 @@ everyone out and invalidates signatures), and prefer Postgres: see the comments 
 | [Choosing a regime](./docs/regimes.md) | `dpdp`, `dpdp_gdpr`, multi-site setups |
 | [The DPDP consent checker](./docs/checker.md) | What each check means and how to fix a gap |
 | [Records](./docs/records.md) | Receipts, notice versions, deletion requests, retention |
+| [Children's data](./docs/children.md) | Age gate, parental consent, blocked purposes |
 | [Widget: DPDP flow](./apps/ui/README.md#dpdp-flow-india) | Widget options, languages, the draft label |
 | [Server and API](./apps/api/README.md) | Configuration, storage drivers, REST API |
 | [Roadmap](./docs/roadmap.md) | What's next |

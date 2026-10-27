@@ -20,6 +20,10 @@ export interface DpdpLabelSet {
   noticeVersion: string
   reopenButton: string
   reopenAriaLabel: string
+  /** On a purpose a child can never switch on (`ageGate.blockedPurposes`). */
+  minorBlocked: string
+  /** On optional purposes while a child's parental consent is pending. */
+  parentalPending: string
 }
 
 /** Kept in English in every locale: the label is for the site owner and their lawyer as much as
@@ -38,6 +42,8 @@ export const DPDP_LABELS: Record<string, DpdpLabelSet> = {
     noticeVersion: 'Notice version',
     reopenButton: 'Privacy choices',
     reopenAriaLabel: 'Open privacy choices to review or withdraw your consent',
+    minorBlocked: 'Not available for children',
+    parentalPending: 'Off until a parent or guardian consents',
   },
   hi: {
     draftBadge: DPDP_DRAFT_BADGE,
@@ -50,6 +56,8 @@ export const DPDP_LABELS: Record<string, DpdpLabelSet> = {
     noticeVersion: 'सूचना संस्करण',
     reopenButton: 'गोपनीयता विकल्प',
     reopenAriaLabel: 'अपनी सहमति देखने या वापस लेने के लिए गोपनीयता विकल्प खोलें',
+    minorBlocked: 'बच्चों के लिए उपलब्ध नहीं',
+    parentalPending: 'माता-पिता या अभिभावक की सहमति तक बंद',
   },
   kn: {
     draftBadge: DPDP_DRAFT_BADGE,
@@ -62,6 +70,8 @@ export const DPDP_LABELS: Record<string, DpdpLabelSet> = {
     noticeVersion: 'ಸೂಚನೆಯ ಆವೃತ್ತಿ',
     reopenButton: 'ಗೌಪ್ಯತೆ ಆಯ್ಕೆಗಳು',
     reopenAriaLabel: 'ನಿಮ್ಮ ಸಮ್ಮತಿಯನ್ನು ಪರಿಶೀಲಿಸಲು ಅಥವಾ ಹಿಂಪಡೆಯಲು ಗೌಪ್ಯತೆ ಆಯ್ಕೆಗಳನ್ನು ತೆರೆಯಿರಿ',
+    minorBlocked: 'ಮಕ್ಕಳಿಗೆ ಲಭ್ಯವಿಲ್ಲ',
+    parentalPending: 'ಪೋಷಕರು ಅಥವಾ ರಕ್ಷಕರು ಸಮ್ಮತಿಸುವವರೆಗೆ ಆಫ್',
   },
   te: {
     draftBadge: DPDP_DRAFT_BADGE,
@@ -74,6 +84,8 @@ export const DPDP_LABELS: Record<string, DpdpLabelSet> = {
     noticeVersion: 'నోటీసు వెర్షన్',
     reopenButton: 'గోప్యతా ఎంపికలు',
     reopenAriaLabel: 'మీ సమ్మతిని సమీక్షించడానికి లేదా ఉపసంహరించుకోవడానికి గోప్యతా ఎంపికలను తెరవండి',
+    minorBlocked: 'పిల్లలకు అందుబాటులో లేదు',
+    parentalPending: 'తల్లిదండ్రులు లేదా సంరక్షకులు సమ్మతించే వరకు ఆఫ్',
   },
   ta: {
     draftBadge: DPDP_DRAFT_BADGE,
@@ -86,6 +98,8 @@ export const DPDP_LABELS: Record<string, DpdpLabelSet> = {
     noticeVersion: 'அறிவிப்புப் பதிப்பு',
     reopenButton: 'தனியுரிமைத் தேர்வுகள்',
     reopenAriaLabel: 'உங்கள் ஒப்புதலைப் பார்க்க அல்லது திரும்பப் பெற தனியுரிமைத் தேர்வுகளைத் திறக்கவும்',
+    minorBlocked: 'குழந்தைகளுக்குக் கிடைக்காது',
+    parentalPending: 'பெற்றோர் அல்லது பாதுகாவலர் ஒப்புதல் அளிக்கும் வரை முடக்கப்பட்டுள்ளது',
   },
 }
 

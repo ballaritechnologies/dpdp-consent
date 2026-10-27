@@ -23,7 +23,7 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-A1 | What must a DPDP notice contain: itemised data and purposes, rights, how to complain to the Data Protection Board? Is a grievance email enough, or do we need a named officer, phone or URL? | open |
 | Q-A2 | How do the s.7 "legitimate uses" map to cookies and trackers? Is "strictly necessary" a valid framing under DPDP? | open |
 | Q-A3 | Can the append-only audit log keep a digest of an erased consent record, and for how long? (Since Phase 5 it keeps only a digest: record ID, profile, version and timestamps.) | open |
-| Q-A4 | The children's threshold (under 18) and which sectors are exempt. | open |
+| Q-A4 | The children's threshold (under 18) and which sectors are exempt. (Now Q-C1.) | open |
 | Q-A5 | Trademark clearance for the new product name (shortlist: Haami, Sammati, Ijazat), and whether "built on Consenti" is fine as attribution wording. Preliminary screen and the exact searches to run are in `docs/naming.md`. | open |
 | Q-A6 | Terms and consent for scanning third-party sites in the hosted checker. | open |
 | Q-A7 | Which Indian languages are required, and which only recommended, for notices (Eighth Schedule)? | open |
@@ -46,3 +46,12 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-P2 | New deletion requests are due in 30 days by default. Which response period should the default be for DPDP (the Rules' grievance timelines) and GDPR (one month, extendable)? | `apps/api/src/services/erasure-request.service.ts` (`DEFAULT_ERASURE_RESPONSE_DAYS`) | open |
 | Q-P3 | Purpose expiry measures from when the visitor last switched a purpose on. What periods are reasonable per purpose, and must the visitor be asked again (rather than the purpose silently switching off)? | `apps/api/src/services/retention.service.ts` | open |
 | Q-P4 | Closed deletion requests keep the requester's contact details until `closedErasureRequestDays` passes (kept forever if unset). How long may a site keep proof that it handled a request? | `apps/api/src/services/retention.service.ts` | open |
+
+## Children's data (Phase 6)
+
+| ID | Question | Where | Status |
+|---|---|---|---|
+| Q-C1 | A DPDP profile can't set the age gate below 18. Is 18 right for every DPDP site, and do any exemptions (Rules, Fourth Schedule) change the threshold or the duty to verify? | `apps/api/src/validators/dpdpa.validator.ts` (`findAgeGateProblem`), `packages/utils/src/children.ts` | open |
+| Q-C2 | By default, purposes holding analytics or advertising items are never granted to a child, even with parental consent. Is that the right reading of "tracking or behavioural monitoring" and "targeted advertising" (s.9(3))? Do functional or preference purposes also count? | `packages/utils/src/children.ts` (`DEFAULT_MINOR_BLOCKED_ITEM_PURPOSES`) | open |
+| Q-C3 | What counts as "verifiable" parental consent under the DPDP Rules, and is a staff-recorded manual verification (with a note) acceptable evidence? | `apps/api/src/services/parental-consent.service.ts` | open |
+| Q-C4 | The age gate is self-declared. When must a site verify age rather than ask, and what should happen when a visitor's answer later turns out to be false? | `apps/ui/src/ui/age-gate.ts` | open |

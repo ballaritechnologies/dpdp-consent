@@ -4,6 +4,7 @@ export * from "./terminal-color.js";
 export * from "./compliance.js";
 export * from "./regime.js";
 export * from "./dpdp-labels.js";
+export * from "./children.js";
 export * from "./tracker-knowledge-base.js";
 export * from "./content-doc.js";
 export * from "./tcf.js";

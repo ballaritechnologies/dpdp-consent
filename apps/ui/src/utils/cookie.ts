@@ -79,7 +79,8 @@ function isConsentCookieData(obj: unknown): obj is ConsentCookieData {
     (d['g'] === 0 || d['g'] === 1) &&
     typeof d['p'] === 'number' &&
     typeof d['c'] === 'object' && d['c'] !== null &&
-    typeof d['l'] === 'string'
+    typeof d['l'] === 'string' &&
+    (d['m'] === undefined || d['m'] === 1 || d['m'] === 2)
   )
 }
 

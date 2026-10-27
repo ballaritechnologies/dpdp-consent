@@ -1,7 +1,7 @@
 import { apiFetch } from './client'
 import type {
   ServerConsentReceipt, NoticeVersion, ErasureRequest, ErasureRequestStatus, ErasureRequestChannel,
-  RetentionPolicy, RetentionRunResult, PagedResult,
+  RetentionPolicy, RetentionRunResult, PagedResult, ParentalConsentRequest,
 } from '@consenti/types'
 
 export type ReceiptRow = ServerConsentReceipt & { verified: boolean }
@@ -26,5 +26,9 @@ export const recordsApi = {
     apiFetch<ErasureRequest>(`/erasure-requests/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   policy: () => apiFetch<RetentionPolicy>('/retention/policy'),
   savePolicy: (policy: RetentionPolicy) => apiFetch<RetentionPolicy>('/retention/policy', { method: 'PUT', body: JSON.stringify(policy) }),
+  parentalConsents: (p: { page: number; limit: number; status?: string }) =>
+    apiFetch<PagedResult<ParentalConsentRequest> & { provider: string | null }>(`/parental-consents?${qs(p)}`),
+  decideParentalConsent: (id: string, body: { status: 'verified' | 'failed'; note?: string }) =>
+    apiFetch<ParentalConsentRequest>(`/parental-consents/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   runRetention: (dryRun: boolean) => apiFetch<RetentionRunResult>('/retention/run', { method: 'POST', body: JSON.stringify({ dryRun }) }),
 }

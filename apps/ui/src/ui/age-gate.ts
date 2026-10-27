@@ -12,6 +12,8 @@
  * chrome (banner close button, locale switcher). A profile that enables `ageGate` without
  * authoring `ageGateModal` text falls back to the English defaults below, so nothing silently
  * breaks for an existing profile that predates this option.
+ *
+ * TODO(legal): Q-C4 — the answer is self-declared; when a site must verify age instead.
  */
 
 import { createOverlay } from './overlay'

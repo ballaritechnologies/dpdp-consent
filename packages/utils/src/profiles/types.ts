@@ -99,6 +99,7 @@ export interface EmbeddedProfile {
     enabled: boolean
     minimumAge: number
     requireParentalConsent?: boolean
+    blockedPurposes?: string[]
   }
 }
 

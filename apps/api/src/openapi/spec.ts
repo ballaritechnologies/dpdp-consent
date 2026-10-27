@@ -186,13 +186,28 @@ export const OPENAPI_PUBLIC_SPEC = {
         parameters: [{ name: 'visitorId', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: { type: 'object', required: ['profileId'], properties: { profileId: { type: 'string' } } } } },
+          content: { 'application/json': { schema: { type: 'object', required: ['profileId'], properties: { profileId: { type: 'string' }, locale: { type: 'string' } } } } },
         },
         responses: {
-          '200': { description: 'Token issued', content: { 'application/json': { schema: { type: 'object', properties: { token: { type: 'string' } } } } } },
+          '200': { description: 'Token issued. The request is also recorded (and started with the configured `parentalConsentProvider`, if any): `requestId`, `status`, and the provider\'s `redirectUrl` / `message` when it gives them.', content: { 'application/json': { schema: { type: 'object', properties: {
+            token: { type: 'string' }, requestId: { type: 'string' }, status: { type: 'string', enum: ['pending', 'verified', 'failed'] }, redirectUrl: { type: 'string' }, message: { type: 'string' },
+          } } } } },
+          '502': { description: 'The parental-consent provider failed' },
           '400': { description: 'Validation error' },
           '403': { description: 'Visitor ownership check failed' },
           '404': { description: 'Profile not found' },
+        },
+      },
+    },
+    '/v1/consent/{visitorId}/parental-consent': {
+      get: {
+        tags: ['Consent'],
+        summary: 'Parental-consent status for this visitor',
+        description: 'The latest parental-consent request for a visitor who answered the age gate as under age, refreshed from the provider while pending. `none` when there is no request. Needs the visitor\'s ownership cookie.',
+        parameters: [{ name: 'visitorId', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Status', content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', enum: ['none', 'pending', 'verified', 'failed'] }, requestId: { type: 'string' }, redirectUrl: { type: 'string' } } } } } },
+          '403': { description: 'Visitor ownership check failed' },
         },
       },
     },
@@ -581,6 +596,27 @@ export const OPENAPI_ADMIN_SPEC = {
         parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
         requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { dryRun: { type: 'boolean', default: true } } } } } },
         responses: { '200': { description: 'RetentionRunResult' } },
+      },
+    },
+    '/parental-consents': {
+      get: {
+        tags: ['Records'],
+        summary: 'List parental-consent requests',
+        description: 'Requests opened when a visitor answers the age gate as under age, with their outcome (from the provider, the signed token, or the dashboard). `provider` names the configured provider. Needs `consent:view`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'status', in: 'query', schema: { type: 'string', enum: ['pending', 'verified', 'failed'] } }, { name: 'page', in: 'query', schema: { type: 'integer' } }, { name: 'limit', in: 'query', schema: { type: 'integer' } }],
+        responses: { '200': { description: '{ items: ParentalConsentRequest[], total, page, limit, provider }' } },
+      },
+    },
+    '/parental-consents/{id}': {
+      patch: {
+        tags: ['Records'],
+        summary: 'Record a parental-consent outcome verified outside Ijazat',
+        description: 'Only for a pending request. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['status'], properties: { status: { type: 'string', enum: ['verified', 'failed'] }, note: { type: 'string', maxLength: 2000 } } } } } },
+        responses: { '200': { description: 'Updated request' }, '400': { description: 'Validation error' }, '404': { description: 'Not found' }, '409': { description: 'Already decided' } },
       },
     },
     '/export/receipts': {

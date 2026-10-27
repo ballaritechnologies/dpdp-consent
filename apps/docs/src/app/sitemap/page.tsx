@@ -248,6 +248,11 @@ const GROUPS: SitemapGroup[] = [
         desc: 'Per-site DPDP / DPDP + GDPR routing',
       },
       {
+        href: '/guides/backend/records',
+        label: 'Records',
+        desc: 'Receipts, notice versions, deletion requests, retention',
+      },
+      {
         href: '/guides/backend/storage',
         label: 'Storage',
         desc: 'Storage adapters and data persistence',

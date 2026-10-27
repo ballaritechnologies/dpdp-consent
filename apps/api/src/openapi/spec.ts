@@ -161,6 +161,23 @@ export const OPENAPI_PUBLIC_SPEC = {
         responses: { '200': { description: 'Verification result' } },
       },
     },
+    '/v1/consent/{visitorId}/erasure-request': {
+      post: {
+        tags: ['Consent'],
+        summary: 'Open a deletion request for this visitor',
+        description: 'Adds a request to the dashboard\'s deletion-request inbox (channel `widget`), due after the site\'s response period (30 days by default). Unlike `DELETE /v1/consent/{visitorId}`, nothing is erased straight away. Needs the visitor\'s ownership cookie.',
+        parameters: [{ name: 'visitorId', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { content: { 'application/json': { schema: { type: 'object', properties: {
+          contact: { type: 'string', maxLength: 254, description: 'How to reach the requester, e.g. an email' },
+          message: { type: 'string', maxLength: 2000 },
+        } } } } },
+        responses: {
+          '201': { description: 'Request opened', content: { 'application/json': { schema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string' }, dueAt: { type: 'string', format: 'date-time' } } } } } },
+          '400': { description: 'Validation error' },
+          '403': { description: 'Visitor ownership check failed' },
+        },
+      },
+    },
     '/v1/consent/{visitorId}/parental-consent-request': {
       post: {
         tags: ['Consent'],
@@ -472,6 +489,114 @@ export const OPENAPI_ADMIN_SPEC = {
         ],
         responses: { '200': { description: 'CSV or JSON download' } },
       },
+    },
+    // ── Records (receipts, notice versions, deletion requests, retention) ──
+    '/receipts': {
+      get: {
+        tags: ['Records'],
+        summary: 'List consent receipts',
+        description: 'One signed receipt per consent decision (given, updated, withdrawn, expired, erased), newest first. `verified` is false when a receipt no longer matches its signature. Needs `consent:view`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 500 } },
+          { name: 'visitorId', in: 'query', schema: { type: 'string' }, description: 'Full visitor ID; matched through its hash' },
+          { name: 'action', in: 'query', schema: { type: 'string', enum: ['given', 'updated', 'withdrawn', 'expired', 'erased'] } },
+          { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } },
+          { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } }],
+        responses: { '200': { description: '{ items: (ServerConsentReceipt & { verified })[], total, page, limit }' }, '400': { description: 'Invalid filter' }, '403': { description: 'Missing permission, or tenant not allowed' } },
+      },
+    },
+    '/notice-versions': {
+      get: {
+        tags: ['Records'],
+        summary: 'List notice versions',
+        description: 'One entry per saved profile version: profile version, DPDP notice version and review status, and a SHA-256 of the profile JSON. Needs `consent:view`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 500 } }, { name: 'profileId', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: '{ items: NoticeVersion[], total, page, limit }' } },
+      },
+    },
+    '/erasure-requests': {
+      get: {
+        tags: ['Records'],
+        summary: 'List deletion requests',
+        description: 'With `overdue=1`, only open requests past their due date. The response also carries `open` and `overdue` counts. Needs `consent:view`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1 } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 500 } },
+          { name: 'status', in: 'query', schema: { type: 'string', enum: ['received', 'verifying', 'in_progress', 'completed', 'rejected'] } },
+          { name: 'overdue', in: 'query', schema: { type: 'string', enum: ['1'] } }],
+        responses: { '200': { description: '{ items: ErasureRequest[], total, page, limit, open, overdue, now }' } },
+      },
+      post: {
+        tags: ['Records'],
+        summary: 'Log a deletion request',
+        description: 'For requests that came in by email or another channel. Needs `settings:update`. A contact, a visitor ID, or both.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: {
+          channel: { type: 'string', enum: ['widget', 'email', 'dashboard', 'api', 'other'], default: 'dashboard' },
+          contact: { type: 'string', maxLength: 254 }, visitorId: { type: 'string' }, message: { type: 'string', maxLength: 2000 },
+        } } } } },
+        responses: { '201': { description: 'ErasureRequest' }, '400': { description: 'Validation error' } },
+      },
+    },
+    '/erasure-requests/{id}': {
+      get: {
+        tags: ['Records'], summary: 'Get a deletion request', security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        responses: { '200': { description: 'ErasureRequest' }, '404': { description: 'Not found' } },
+      },
+      patch: {
+        tags: ['Records'],
+        summary: 'Change a deletion request\'s status',
+        description: 'received → verifying → in_progress → completed / rejected (steps can be skipped; closed requests cannot change). Rejecting needs a `note`. With `status: completed` and `eraseConsent: true`, the visitor\'s consent record is erased too. Every change is added to the request\'s history and the audit log. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['status'], properties: {
+          status: { type: 'string', enum: ['verifying', 'in_progress', 'completed', 'rejected'] }, note: { type: 'string', maxLength: 2000 }, eraseConsent: { type: 'boolean' },
+        } } } } },
+        responses: { '200': { description: 'Updated ErasureRequest' }, '400': { description: 'Validation error' }, '404': { description: 'Not found' }, '409': { description: 'Transition not allowed' } },
+      },
+    },
+    '/retention/policy': {
+      get: { tags: ['Records'], summary: 'Get the retention policy', security: [{ BearerAuth: [] }], parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }], responses: { '200': { description: 'RetentionPolicy (empty object = keep everything)' } } },
+      put: {
+        tags: ['Records'],
+        summary: 'Replace the retention policy',
+        description: 'All fields optional, whole days from 1 to 36500. `purposeExpiryDays` maps purpose (category) IDs to days. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: {
+          purposeExpiryDays: { type: 'object', additionalProperties: { type: 'integer' } },
+          receiptDays: { type: 'integer' }, closedErasureRequestDays: { type: 'integer' }, erasureResponseDays: { type: 'integer' },
+        } } } } },
+        responses: { '200': { description: 'Saved RetentionPolicy' }, '400': { description: 'Validation error' } },
+      },
+    },
+    '/retention/run': {
+      post: {
+        tags: ['Records'],
+        summary: 'Run retention now',
+        description: 'A dry run unless the body has `dryRun: false`. The same job runs daily for every site. Needs `settings:update`.',
+        security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }],
+        requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { dryRun: { type: 'boolean', default: true } } } } } },
+        responses: { '200': { description: 'RetentionRunResult' } },
+      },
+    },
+    '/export/receipts': {
+      get: { tags: ['Export'], summary: 'Export consent receipts', description: 'Same filters as GET /receipts. Needs `export:run`.', security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'visitorId', in: 'query', schema: { type: 'string' } }, { name: 'action', in: 'query', schema: { type: 'string' } }, { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } }, { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } }],
+        responses: { '200': { description: 'CSV or JSON download' } } },
+    },
+    '/export/erasure-requests': {
+      get: { tags: ['Export'], summary: 'Export deletion requests', description: 'Includes contact details. Needs `export:run`.', security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'status', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'CSV or JSON download' } } },
+    },
+    '/export/notice-versions': {
+      get: { tags: ['Export'], summary: 'Export notice versions', security: [{ BearerAuth: [] }],
+        parameters: [{ name: 'format', in: 'query', schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' } }, { name: 'tenantId', in: 'query', schema: { type: 'string', default: 'default' } }, { name: 'profileId', in: 'query', schema: { type: 'string' } }],
+        responses: { '200': { description: 'CSV or JSON download' } } },
     },
     // ── Settings ──────────────────────────────────────────────────────────
     '/settings': {

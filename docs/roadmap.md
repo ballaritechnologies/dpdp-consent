@@ -12,7 +12,7 @@ reviewed by a lawyer before we describe a feature as ready; open points live in
 - DPDP consent checker (CLI + library) with JSON and HTML gap reports
 - Docker quickstart built from source
 
-## v0.2: records
+## v0.2: records (built, not yet released)
 
 - Consent receipts stored on the server for every decision: purposes, decision, notice version,
   language, time, and a hashed visitor ID

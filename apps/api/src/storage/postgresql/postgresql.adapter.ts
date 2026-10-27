@@ -1,10 +1,12 @@
 import type { Pool, PoolClient, QueryResult } from 'pg'
+import { entityUpsert, entitySelect, entityWhere, rowToEntity, dollar, type EntityRow } from '../entity-sql'
 import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
-import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_POSTGRES, SCHEMA_VERSION, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
+import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_POSTGRES, SCHEMA_VERSION, V4_SQL_POSTGRES, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
 import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import { likePrefix } from '../../utils/sql-search'
 import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
 import type {
+  EntityRecord, EntityFilter, EntityListOptions, EntityCollection,
   StorageAdapter, StorageConfig, Profile, StoredProfileJson,
   CreateProfileInput, UpdateProfileInput,
   ConsentDbRecord, ConsentSummary, ConsentHistoryEntry, ConsentValue, ConsentFilters,
@@ -316,6 +318,18 @@ export class PostgreSQLAdapter implements StorageAdapter {
           )
         }
       }
+      if (version < 4) {
+        try {
+          await this.migrateToV4(client)
+        } catch (err) {
+          throw new Error(
+            `Upgrading the database schema to v4 failed: ${err instanceof Error ? err.message : String(err)}. ` +
+            `The database user needs CREATE on the schema. Nothing was changed — the upgrade runs ` +
+            `in one transaction and was rolled back; fix the cause and start again.`,
+            { cause: err },
+          )
+        }
+      }
     } finally {
       try { await client.query(`SELECT pg_advisory_unlock(hashtext('consenti_schema'))`) } catch { /* connection already gone — the lock went with it */ }
       client.release()
@@ -348,6 +362,18 @@ export class PostgreSQLAdapter implements StorageAdapter {
     try {
       await client.query('ALTER TABLE consenti_tenant_settings ADD COLUMN IF NOT EXISTS regime_json JSONB')
       await client.query('INSERT INTO consenti_schema_version (version) VALUES (3) ON CONFLICT DO NOTHING')
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    }
+  }
+
+  private async migrateToV4(client: PoolClient): Promise<void> {
+    await client.query('BEGIN')
+    try {
+      for (const stmt of V4_SQL_POSTGRES.split(';').map(x => x.trim()).filter(Boolean)) await client.query(stmt)
+      await client.query('INSERT INTO consenti_schema_version (version) VALUES (4) ON CONFLICT DO NOTHING')
       await client.query('COMMIT')
     } catch (err) {
       await client.query('ROLLBACK')
@@ -1054,6 +1080,37 @@ export class PostgreSQLAdapter implements StorageAdapter {
     await this.q(`DELETE FROM consenti_consent_history WHERE visitor_id IN (${placeholders})`, ids)
     await this.q(`DELETE FROM consenti_consent_records WHERE visitor_id IN (${placeholders})`, ids)
     return ids.length
+  }
+
+  // ── Entity records ──────────────────────────────────────────────────────────
+
+  async putEntity(record: EntityRecord): Promise<void> {
+    const { sql, params } = entityUpsert('consenti_entity_records', 'postgres', record)
+    await this.q(sql, params)
+  }
+
+  async getEntity(tenantId: string, collection: EntityCollection, id: string): Promise<EntityRecord | null> {
+    const rows = await this.q<EntityRow>(
+      'SELECT * FROM consenti_entity_records WHERE id=$1 AND tenant_id=$2 AND collection=$3', [id, tenantId, collection],
+    )
+    return rows[0] ? rowToEntity(rows[0]) : null
+  }
+
+  async listEntities(filter: EntityFilter, options?: EntityListOptions): Promise<EntityRecord[]> {
+    const { sql, params } = entitySelect('consenti_entity_records', filter, dollar, options)
+    return (await this.q<EntityRow>(sql, params)).map(rowToEntity)
+  }
+
+  async countEntities(filter: EntityFilter): Promise<number> {
+    const { sql, params } = entityWhere(filter, dollar)
+    const rows = await this.q<{ n: string }>(`SELECT COUNT(*) AS n FROM consenti_entity_records WHERE ${sql}`, params)
+    return Number(rows[0]?.n ?? 0)
+  }
+
+  async deleteEntities(filter: EntityFilter): Promise<number> {
+    const { sql, params } = entityWhere(filter, dollar)
+    const res = await this.pool.query(`DELETE FROM consenti_entity_records WHERE ${sql}`, params)
+    return res.rowCount ?? 0
   }
 
   // ── Consent Templates ────────────────────────────────────────────────────────

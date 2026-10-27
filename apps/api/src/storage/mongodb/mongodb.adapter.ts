@@ -1,9 +1,11 @@
 import type { MongoClient, Db } from 'mongodb'
+import { rowToEntity, clampLimit, type EntityRow } from '../entity-sql'
 import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
 import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, ALL_INDEXES, LEGACY_PROBE_NAMES, prefixed, legacyInstallError } from '../seed-data'
 import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
 import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import type {
+  EntityRecord, EntityFilter, EntityListOptions, EntityCollection,
   StorageAdapter, StorageConfig, Profile, StoredProfileJson,
   CreateProfileInput, UpdateProfileInput,
   ConsentDbRecord, ConsentSummary, ConsentHistoryEntry, ConsentValue, ConsentFilters,
@@ -89,6 +91,8 @@ interface DocApiKey {
   _id: string; tenant_id: string; key_hash: string; name: string; is_active: boolean
   created_by?: string; expire_by?: string; created_at: string; updated_at?: string
 }
+
+type DocEntity = Omit<EntityRow, 'id'> & { _id: string }
 
 // ── Mapper helpers ─────────────────────────────────────────────────────────────
 
@@ -963,6 +967,54 @@ export class MongoDBAdapter implements StorageAdapter {
     await this.col('consent_history').deleteMany({ visitor_id: { $in: visitorIds } })
     await this.col('consent_records').deleteMany({ visitor_id: { $in: visitorIds } })
     return docs.length
+  }
+
+  // ── Entity records ──────────────────────────────────────────────────────────
+
+  private entityQuery(f: EntityFilter): Record<string, unknown> {
+    const q: Record<string, unknown> = { tenant_id: f.tenantId, collection: f.collection }
+    if (f.ref !== undefined) q['ref'] = f.ref
+    if (f.status !== undefined) q['status'] = f.status
+    if (f.dueBefore !== undefined) q['due_at'] = { $lt: f.dueBefore, $ne: null }
+    const created: Record<string, string> = {}
+    if (f.createdBefore !== undefined) created['$lt'] = f.createdBefore
+    if (f.createdFrom !== undefined) created['$gte'] = f.createdFrom
+    if (Object.keys(created).length) q['created_at'] = created
+    return q
+  }
+
+  private mapEntity(d: DocEntity): EntityRecord {
+    return rowToEntity({ ...d, id: d._id })
+  }
+
+  async putEntity(record: EntityRecord): Promise<void> {
+    const { id, tenantId, collection, ref, status, dueAt, createdAt, updatedAt, data } = record
+    await this.col('entity_records').updateOne(
+      { _id: id, tenant_id: tenantId },
+      { $set: { collection, ref, status, due_at: dueAt, updated_at: updatedAt, data_json: JSON.stringify(data) }, $setOnInsert: { created_at: createdAt } },
+      { upsert: true },
+    )
+  }
+
+  async getEntity(tenantId: string, collection: EntityCollection, id: string): Promise<EntityRecord | null> {
+    const d = cast<DocEntity>(await this.col('entity_records').findOne({ _id: id, tenant_id: tenantId, collection }))
+    return d ? this.mapEntity(d) : null
+  }
+
+  async listEntities(filter: EntityFilter, options: EntityListOptions = {}): Promise<EntityRecord[]> {
+    const dir = options.order === 'asc' ? 1 : -1
+    const docs = await this.col('entity_records').find(this.entityQuery(filter))
+      .sort({ created_at: dir, _id: dir }).skip(Math.max(0, Math.floor(options.offset ?? 0))).limit(clampLimit(options.limit)).toArray()
+    return castArr<DocEntity>(docs).map(d => this.mapEntity(d))
+  }
+
+  async countEntities(filter: EntityFilter): Promise<number> {
+    return this.col('entity_records').countDocuments(this.entityQuery(filter))
+  }
+
+  async deleteEntities(filter: EntityFilter): Promise<number> {
+    const res = await this.col('entity_records').deleteMany(this.entityQuery(filter)) as { deletedCount?: number }
+    return res.deletedCount ?? 0
   }
 
   // ── Consent Templates ────────────────────────────────────────────────────────

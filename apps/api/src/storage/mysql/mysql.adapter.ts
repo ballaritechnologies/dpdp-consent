@@ -1,10 +1,12 @@
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise'
+import { entityUpsert, entitySelect, entityWhere, rowToEntity, qmark, type EntityRow } from '../entity-sql'
 import { randomUUID, randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
-import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_MYSQL, SCHEMA_VERSION, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
+import { SEED_TENANT, SEED_PERMISSIONS, SEED_ROLES, SEED_ROLE_PERMISSIONS, SCHEMA_SQL_MYSQL, SCHEMA_VERSION, V4_SQL_MYSQL, LEGACY_PROBE_NAMES, legacyInstallError } from '../seed-data'
 import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import { likePrefix } from '../../utils/sql-search'
 import { buildProfileSummaries, tallyOptIn } from '../derived-queries'
 import type {
+  EntityRecord, EntityFilter, EntityListOptions, EntityCollection,
   StorageAdapter, StorageConfig, Profile, StoredProfileJson,
   CreateProfileInput, UpdateProfileInput,
   ConsentDbRecord, ConsentSummary, ConsentHistoryEntry, ConsentValue, ConsentFilters,
@@ -329,6 +331,18 @@ export class MySQLAdapter implements StorageAdapter {
             )
           }
         }
+        if (version < 4) {
+          try {
+            await this.migrateToV4(conn)
+          } catch (err) {
+            throw new Error(
+              `Upgrading the database schema to v4 failed: ${err instanceof Error ? err.message : String(err)}. ` +
+              `The database user needs the CREATE and INDEX privileges. This step only adds a table, ` +
+              `and is safe to re-run: fix the cause and start again.`,
+              { cause: err },
+            )
+          }
+        }
       }
     } finally {
       try { await conn.query(`SELECT RELEASE_LOCK(${lockSql})`) } catch { /* connection already gone — the lock went with it */ }
@@ -365,6 +379,11 @@ export class MySQLAdapter implements StorageAdapter {
     )
     if (cols.length === 0) await conn.query('ALTER TABLE consenti_tenant_settings ADD COLUMN regime_json LONGTEXT NULL')
     await conn.query('INSERT IGNORE INTO consenti_schema_version (version) VALUES (3)')
+  }
+
+  private async migrateToV4(conn: PoolConnection): Promise<void> {
+    for (const stmt of V4_SQL_MYSQL.split(';').map(x => x.trim()).filter(Boolean)) await conn.query(stmt)
+    await conn.query('INSERT IGNORE INTO consenti_schema_version (version) VALUES (4)')
   }
 
   private async seed(conn: PoolConnection): Promise<void> {
@@ -1018,6 +1037,36 @@ export class MySQLAdapter implements StorageAdapter {
     await this.exec(`DELETE FROM consenti_consent_history WHERE visitor_id IN (${placeholders})`, ids)
     await this.exec(`DELETE FROM consenti_consent_records WHERE visitor_id IN (${placeholders})`, ids)
     return ids.length
+  }
+
+  // ── Entity records ──────────────────────────────────────────────────────────
+
+  async putEntity(record: EntityRecord): Promise<void> {
+    const { sql, params } = entityUpsert('consenti_entity_records', 'mysql', record)
+    await this.exec(sql, params)
+  }
+
+  async getEntity(tenantId: string, collection: EntityCollection, id: string): Promise<EntityRecord | null> {
+    const rows = await this.q<EntityRow & RowDataPacket>(
+      'SELECT * FROM consenti_entity_records WHERE id=? AND tenant_id=? AND collection=?', [id, tenantId, collection],
+    )
+    return rows[0] ? rowToEntity(rows[0]) : null
+  }
+
+  async listEntities(filter: EntityFilter, options?: EntityListOptions): Promise<EntityRecord[]> {
+    const { sql, params } = entitySelect('consenti_entity_records', filter, qmark, options)
+    return (await this.q<EntityRow & RowDataPacket>(sql, params)).map(rowToEntity)
+  }
+
+  async countEntities(filter: EntityFilter): Promise<number> {
+    const { sql, params } = entityWhere(filter, qmark)
+    const rows = await this.q<{ n: number } & RowDataPacket>(`SELECT COUNT(*) AS n FROM consenti_entity_records WHERE ${sql}`, params)
+    return Number(rows[0]?.n ?? 0)
+  }
+
+  async deleteEntities(filter: EntityFilter): Promise<number> {
+    const { sql, params } = entityWhere(filter, qmark)
+    return (await this.exec(`DELETE FROM consenti_entity_records WHERE ${sql}`, params)).affectedRows
   }
 
   // ── Consent Templates ────────────────────────────────────────────────────────

@@ -308,6 +308,31 @@ const uiTemplates: TableDef = {
   ],
 }
 
+// Generic per-tenant records for Ijazat's record-keeping features (consent receipts, notice
+// versions, erasure requests, …): one table instead of one per feature, so a new record type needs
+// no migration on any of the seven drivers. `collection` says what a row is; `ref`, `status` and
+// `due_at` are the only fields queried; everything else lives in `data_json`. Timestamps are ISO
+// strings (UTC), so they compare and sort the same way on every driver.
+const entityRecords: TableDef = {
+  name: 'entity_records',
+  cols: [
+    { n: 'id',         t: 'pk' },
+    { n: 'tenant_id',  t: 'text', ref: 'tenants', onDel: 'CASCADE' },
+    { n: 'collection', t: 'text_md' },
+    { n: 'ref',        t: 'text', null: true },
+    { n: 'status',     t: 'text_sm', null: true },
+    { n: 'due_at',     t: 'text_md', null: true },
+    { n: 'created_at', t: 'text_md' },
+    { n: 'updated_at', t: 'text_md' },
+    { n: 'data_json',  t: 'longtext' },
+  ],
+  idx: [
+    { cols: ['tenant_id', 'collection', 'created_at'] },
+    { cols: ['tenant_id', 'collection', 'ref'] },
+    { cols: ['tenant_id', 'collection', 'status', 'due_at'] },
+  ],
+}
+
 // ── Exported table definition groups ─────────────────────────────────────────
 // A fresh install creates the full current table set in one pass and is stamped SCHEMA_VERSION.
 // Each SQL adapter's `migrate()` gates upgrades of older databases on `schema_version` /
@@ -316,8 +341,9 @@ const uiTemplates: TableDef = {
 //            is evidence and must outlive its profile) and add profile_version to
 //            consent_records / consent_history.
 //   v2 → v3  add the nullable regime_json column to tenant_settings (per-site consent regime).
+//   v3 → v4  add the entity_records table (receipts, notice versions, erasure requests, …).
 // MongoDB and the JSON file adapter are schemaless — the new fields are simply optional there.
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /**
  * Prefix on every table (PostgreSQL / MySQL) and collection (MongoDB), so Consenti never collides
@@ -358,14 +384,14 @@ export function legacyInstallError(kind: 'tables' | 'collections'): Error {
 export const ALL_TABLES_SQLITE: readonly TableDef[] = [
   tenants, profiles, consentRecords, consentHistory, visitors,
   usersSqlite, roles, permissions, userRoles, rolePermissions, auditLogs,
-  apiKeys, consentTemplates, uiTemplates, tenantSettings, noticeShown,
+  apiKeys, consentTemplates, uiTemplates, tenantSettings, noticeShown, entityRecords,
 ]
 
 /** All tables, PostgreSQL/MySQL dialect. */
 export const ALL_TABLES_FULL: readonly TableDef[] = [
   tenants, profiles, consentRecords, consentHistory, visitors,
   users, roles, permissions, userRoles, rolePermissions, auditLogs,
-  apiKeys, consentTemplates, uiTemplates, tenantSettings, noticeShown,
+  apiKeys, consentTemplates, uiTemplates, tenantSettings, noticeShown, entityRecords,
 ]
 
 // ── SQL generators ────────────────────────────────────────────────────────────
@@ -527,6 +553,13 @@ export function sqliteRebuildStatements(table: string, copyCols: string[]): { cr
     swap: [`DROP TABLE ${table};`, `ALTER TABLE ${table}_v2 RENAME TO ${table};`, buildIndexesSQLite(def)].filter(Boolean).join('\n'),
   }
 }
+
+// ── v3 → v4 upgrade (all SQL dialects) ───────────────────────────────────────
+// Purely additive: one new table. CREATE TABLE / INDEX IF NOT EXISTS keeps a re-run harmless.
+
+export const V4_SQL_SQLITE = toSQLite([entityRecords])
+export const V4_SQL_POSTGRES = toPostgres([entityRecords])
+export const V4_SQL_MYSQL = toMySQL([entityRecords])
 
 // ── Index list for document stores ────────────────────────────────────────────
 // MongoDB is schemaless, so it can't consume CREATE INDEX SQL — it consumes this list directly.

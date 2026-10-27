@@ -18,9 +18,10 @@ interface Props<T extends Record<string, unknown>> {
   emptyText?: string
   /** Server-side search — unlike `Table`'s own `search` prop, this must trigger a refetch rather
    * than filtering the already-fetched page, since results outside the current page wouldn't be
-   * visible to a client-side filter. */
-  searchValue: string
-  onSearchChange: (v: string) => void
+   * visible to a client-side filter.
+   * Omit both to hide the search box (lists with nothing to search). */
+  searchValue?: string
+  onSearchChange?: (v: string) => void
   searchPlaceholder?: string
   /** Extra filter controls (date pickers, checkboxes, selects) rendered next to the search box. */
   filters?: ComponentChildren
@@ -50,17 +51,19 @@ export function DataTable<T extends Record<string, unknown>>({
   return (
     <div>
       <div class="flex flex-wrap items-center gap-2 mb-3">
-        <div class="relative flex-1 min-w-[200px] max-w-sm">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-          <input
-            type="search"
-            value={searchValue}
-            onInput={e => onSearchChange((e.target as HTMLInputElement).value)}
-            placeholder={searchPlaceholder ?? t('common.search')}
-            aria-label={searchPlaceholder ?? t('common.search')}
-            class="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
-          />
-        </div>
+        {onSearchChange && (
+          <div class="relative flex-1 min-w-[200px] max-w-sm">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+            <input
+              type="search"
+              value={searchValue ?? ''}
+              onInput={e => onSearchChange((e.target as HTMLInputElement).value)}
+              placeholder={searchPlaceholder ?? t('common.search')}
+              aria-label={searchPlaceholder ?? t('common.search')}
+              class="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200"
+            />
+          </div>
+        )}
         {filters}
         <div class="ml-auto flex items-center gap-3">{toolbarEnd}</div>
       </div>

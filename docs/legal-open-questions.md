@@ -22,7 +22,7 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 |---|---|---|
 | Q-A1 | What must a DPDP notice contain: itemised data and purposes, rights, how to complain to the Data Protection Board? Is a grievance email enough, or do we need a named officer, phone or URL? | open |
 | Q-A2 | How do the s.7 "legitimate uses" map to cookies and trackers? Is "strictly necessary" a valid framing under DPDP? | open |
-| Q-A3 | Can the append-only audit log keep a digest of an erased consent record, and for how long? (Today it keeps the full record.) | open |
+| Q-A3 | Can the append-only audit log keep a digest of an erased consent record, and for how long? (Since Phase 5 it keeps only a digest: record ID, profile, version and timestamps.) | open |
 | Q-A4 | The children's threshold (under 18) and which sectors are exempt. | open |
 | Q-A5 | Trademark clearance for the new product name (shortlist: Haami, Sammati, Ijazat), and whether "built on Consenti" is fine as attribution wording. Preliminary screen and the exact searches to run are in `docs/naming.md`. | open |
 | Q-A6 | Terms and consent for scanning third-party sites in the hosted checker. | open |
@@ -37,3 +37,12 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-D3 | The "essential" purpose is always on and shown as not needing consent. Is that framing acceptable under DPDP (see also Q-A2 on s.7 legitimate uses)? | `opt-in-dpdpa/en.ts` (`necessary`) | open |
 | Q-D4 | Is a visible `DRAFT - REQUIRES LEGAL REVIEW` label on a live site the right safeguard, or should an unreviewed notice block activation instead? | `apps/ui/src/dpdp/notice.ts` | open |
 | Q-D5 | Does the notice need to name the Data Protection Board and how to complain to it, in addition to the grievance officer? | `packages/utils/src/dpdp-labels.ts` | open |
+
+## Records (Phase 5)
+
+| ID | Question | Where | Status |
+|---|---|---|---|
+| Q-P1 | Consent receipts are kept after the consent record is erased, as pseudonymous evidence (keyed hash of the visitor ID, purposes, notice version, time). Is that acceptable under DPDP s.8(7) / GDPR Art. 17, and for how long? | `apps/api/src/services/receipt.service.ts` | open |
+| Q-P2 | New deletion requests are due in 30 days by default. Which response period should the default be for DPDP (the Rules' grievance timelines) and GDPR (one month, extendable)? | `apps/api/src/services/erasure-request.service.ts` (`DEFAULT_ERASURE_RESPONSE_DAYS`) | open |
+| Q-P3 | Purpose expiry measures from when the visitor last switched a purpose on. What periods are reasonable per purpose, and must the visitor be asked again (rather than the purpose silently switching off)? | `apps/api/src/services/retention.service.ts` | open |
+| Q-P4 | Closed deletion requests keep the requester's contact details until `closedErasureRequestDays` passes (kept forever if unset). How long may a site keep proof that it handled a request? | `apps/api/src/services/retention.service.ts` | open |

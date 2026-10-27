@@ -866,6 +866,17 @@ fetch(\`/consenti/api/v1/resolve-profile?data=\${encodeURIComponent(data)}\`)`,
         calls <code>GET /consent/:visitorId/verify</code> on subsequent page loads to skip the
         banner if consent is still valid.
       </Callout>
+      <h3>
+        <Method m="POST" /> <code>/consent/:visitorId/erasure-request</code>
+      </h3>
+      <p>
+        Opens a deletion request in the dashboard inbox (channel <code>widget</code>), due after the
+        site&apos;s response period (30 days by default). Nothing is erased straight away. Needs the
+        visitor&apos;s ownership cookie. Body (optional): <code>contact</code> (≤ 254 chars),{' '}
+        <code>message</code> (≤ 2000). Returns <code>201</code> with <code>id</code>,{' '}
+        <code>status</code> and <code>dueAt</code>. See the <a href="/guides/backend/records">Records guide</a>.
+      </p>
+
 
       <h3>
         <Method m="POST" /> <code>/consent/:visitorId/parental-consent-request</code>

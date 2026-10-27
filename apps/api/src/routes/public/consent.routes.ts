@@ -13,6 +13,7 @@ import {
   castCreateConsent, castUpdateConsent,
 } from '../../validators/consent.validator'
 import { randomVisitorId } from '../../utils/crypto'
+import { ErasureRequestError, type ErasureRequestService } from '../../services/erasure-request.service'
 
 // Verify that the request's cookie contains a valid consenti_<visitorId> token,
 // proving the caller is the actual visitor who originally submitted consent.
@@ -38,6 +39,7 @@ export function buildConsentRoutes(
   dataSigningHash = '',
   eventBus?: EventEmitter,
   parentalConsentTokenTtlDays = 7,
+  erasureRequests?: ErasureRequestService,
 ) {
   return {
     'POST /consent': async (request: Request, _params: Record<string, string>): Promise<Response> =>
@@ -160,6 +162,30 @@ export function buildConsentRoutes(
           headers['Set-Cookie'] = buildExpireOwnershipCookie(visitorId)
         }
         return new Response(JSON.stringify({ success: true }), { status: 200, headers })
+      }),
+
+    // A visitor asks for their data to be deleted. Unlike DELETE /consent (which erases the
+    // consent record straight away), this opens a request in the dashboard's deletion inbox,
+    // for data held outside the consent record. Ownership as above; contact and message optional.
+    'POST /consent/:visitorId/erasure-request': async (request: Request, params: Record<string, string>): Promise<Response> =>
+      withErrorHandler(async () => {
+        if (!erasureRequests) return errorResponse(404, 'Not found')
+        const visitorId = params['visitorId']
+        if (!visitorId) return errorResponse(400, 'Missing visitorId')
+        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        if (ownershipError) return ownershipError
+        const body = (await parseJsonBody<Record<string, unknown>>(request)) ?? {}
+        if (typeof body !== 'object' || Array.isArray(body)) return errorResponse(400, 'Invalid JSON body')
+        try {
+          const created = await erasureRequests.create({
+            tenantId: await resolveTenantId(request), channel: 'widget', visitorId,
+            contact: body['contact'] as string | null, message: body['message'] as string | null,
+          })
+          return json(201, { id: created.id, status: created.status, dueAt: created.dueAt })
+        } catch (err) {
+          if (err instanceof ErasureRequestError) return errorResponse(err.status, err.message)
+          throw err
+        }
       }),
 
     // Stateless parental-consent hook — plumbing for a host to wire up their own out-of-band

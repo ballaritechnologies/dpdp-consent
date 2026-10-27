@@ -31,6 +31,10 @@ import { VisitorService } from './services/visitor.service'
 import { NoticeService } from './services/notice.service'
 import { UserService } from './services/user.service'
 import { RegimeService } from './services/regime.service'
+import { ReceiptService } from './services/receipt.service'
+import { NoticeVersionService } from './services/notice-version.service'
+import { ErasureRequestService } from './services/erasure-request.service'
+import { RetentionService } from './services/retention.service'
 import { LocalAuth } from './auth/local.auth'
 import { buildProfileRoutes } from './routes/public/profile.routes'
 import { buildConsentRoutes } from './routes/public/consent.routes'
@@ -46,6 +50,7 @@ import { buildAdminRoleRoutes } from './routes/admin/roles.routes'
 import { buildAdminAuditRoutes } from './routes/admin/audit.routes'
 import { buildAdminStatsRoutes } from './routes/admin/stats.routes'
 import { buildAdminExportRoutes } from './routes/admin/export.routes'
+import { buildAdminRecordRoutes } from './routes/admin/records.routes'
 import { buildAdminApiKeyRoutes } from './routes/admin/apikeys.routes'
 import { buildAdminTenantRoutes } from './routes/admin/tenants.routes'
 import { buildAdminSettingsRoutes } from './routes/admin/settings.routes'
@@ -453,13 +458,21 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     console.warn('[Consenti] compliance.complianceMap is ignored when compliance.type is a fixed group')
   }
 
-  const profileService = new ProfileService(profileRepo, auditRepo, 'default', storage, eventBus, localeCache, profilesDir, config.handleCache, config.s3Api)
+  const receiptService = new ReceiptService(storage, compliance.dataSigningHash)
+  const noticeVersionService = new NoticeVersionService(storage)
+  const profileService = new ProfileService(profileRepo, auditRepo, 'default', storage, eventBus, localeCache, profilesDir, config.handleCache, config.s3Api, noticeVersionService)
   const visitorService = new VisitorService(visitorRepo, 'default', eventBus, compliance.dataSigningHash)
   const noticeService = new NoticeService(noticeRepo, 'default')
   const consentService = new ConsentService(
     consentRepo, visitorRepo, profileRepo, auditRepo, 'default', config.compliance,
     pluginEngine, eventBus, compliance.tcf, storage, compliance.dataSigningHash, compliance.gpp,
     (id, version) => profileService.getArchivedSnapshot(id, version),
+    receiptService,
+  )
+  const retentionService = new RetentionService(storage, consentService, receiptService, auditRepo, eventBus)
+  const erasureRequestService = new ErasureRequestService(
+    storage, auditRepo, id => receiptService.visitorRef(id), id => consentService.erase(id),
+    tenantId => retentionService.getPolicy(tenantId),
   )
   const userService = new UserService(userRepo, auditRepo)
   const regimeService = new RegimeService(tenantId => storage.getSettings(tenantId))
@@ -526,7 +539,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
         rateLimit: true,
         routes: {
           ...buildProfileRoutes(profileService, geoResolver, profilesDir, apiBase, { regime: regimeService, multiTenant: multiTenantEnabled }),
-          ...buildConsentRoutes(consentService, visitorService, profileService, resolveTenantId, storage, compliance.dataSigningHash, eventBus, compliance.parentalConsentTokenTtlDays ?? 7),
+          ...buildConsentRoutes(consentService, visitorService, profileService, resolveTenantId, storage, compliance.dataSigningHash, eventBus, compliance.parentalConsentTokenTtlDays ?? 7, erasureRequestService),
           ...buildNoticeRoutes(noticeService),
           ...buildTcfStatusRoutes(storage, compliance.tcf),
           ...buildGppStatusRoutes(storage, compliance.gpp),
@@ -557,6 +570,9 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
           ...buildAdminAuditRoutes(storage, authConfig, adminSecret),
           ...buildAdminStatsRoutes(storage, statsService, authConfig, adminSecret),
           ...buildAdminExportRoutes(storage, authConfig, adminSecret, profileService),
+          ...buildAdminRecordRoutes(storage, authConfig, adminSecret, {
+            receipts: receiptService, noticeVersions: noticeVersionService, erasure: erasureRequestService, retention: retentionService,
+          }),
           ...buildAdminApiKeyRoutes(storage, authConfig, adminSecret),
           ...buildAdminTenantRoutes(storage, authConfig, adminSecret),
           ...buildAdminSettingsRoutes(storage, authConfig, adminSecret),
@@ -575,6 +591,8 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
   )
 
   let retentionTimer: ReturnType<typeof setInterval> | null = null
+  let recordsRetentionTimer: ReturnType<typeof setInterval> | null = null
+  let recordsRetentionTimeout: ReturnType<typeof setTimeout> | null = null
 
   // Resolves after storage.connect() + bootstrap() complete — consumers can await
   // this before accepting requests to guarantee the admin user already exists.
@@ -596,6 +614,25 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
         startGvlRefresh()
         startCmpListRefresh()
       }
+
+      // Ijazat retention policies (per tenant, set in the dashboard): a daily run, first one an hour after start.
+      const runRetention = async (): Promise<void> => {
+        for (const t of await storage.getTenants()) {
+          try {
+            const r = await retentionService.run(t.id)
+            if (r.expired.length || r.receiptsDeleted || r.erasureRequestsDeleted) {
+              console.warn(`[ijazat] Retention (${t.id}): ${r.expired.length} visitors had purposes lapse, ${r.receiptsDeleted} receipts and ${r.erasureRequestsDeleted} closed requests deleted`)
+            }
+          } catch (err) {
+            console.warn(`[ijazat] Retention run failed for tenant ${t.id}:`, err)
+          }
+        }
+      }
+      recordsRetentionTimeout = setTimeout(() => {
+        void runRetention()
+        recordsRetentionTimer = setInterval(() => { void runRetention() }, 24 * 60 * 60_000)
+      }, 60 * 60_000)
+      recordsRetentionTimeout.unref?.()
 
       if (compliance.dataRetention?.purgeAfterDays) {
         const days = compliance.dataRetention.purgeAfterDays
@@ -759,6 +796,10 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     consent: consentService,
     visitor: visitorService,
     user: userService,
+    receipts: receiptService,
+    noticeVersions: noticeVersionService,
+    erasureRequests: erasureRequestService,
+    retention: retentionService,
   }
 
   return {
@@ -772,6 +813,8 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     ready,
     destroy: async () => {
       if (retentionTimer) clearInterval(retentionTimer)
+      if (recordsRetentionTimer) clearInterval(recordsRetentionTimer)
+      if (recordsRetentionTimeout) clearTimeout(recordsRetentionTimeout)
       statsService.dispose()
       if (compliance.tcf?.enabled) { stopGvlRefresh(); stopCmpListRefresh() }
       complianceMapRefresh?.stop()

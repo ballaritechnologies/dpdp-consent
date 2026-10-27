@@ -6,9 +6,12 @@ import { resolveStoragePaths } from '../../utils/storage-path'
 import { SEED_SQL, SCHEMA_SQL_SQLITE, SCHEMA_VERSION } from '../seed-data'
 import { migrateSqliteToV2 } from './migrate-v2'
 import { migrateSqliteToV3 } from './migrate-v3'
+import { migrateSqliteToV4 } from './migrate-v4'
+import { entityUpsert, entitySelect, entityWhere, rowToEntity, qmark, type EntityRow } from '../entity-sql'
 import { regimeFromColumn, regimeToColumn } from '../regime-column'
 import { likePrefix } from '../../utils/sql-search'
 import type {
+  EntityRecord, EntityFilter, EntityListOptions, EntityCollection,
   StorageAdapter,
   StorageConfig,
   Profile,
@@ -192,6 +195,7 @@ export class BetterSqlite3Adapter implements StorageAdapter {
       ver = 2
     }
     if (ver < 3) this.migrateToV3()
+    if (ver < 4) migrateSqliteToV4({ exec: sql => this.db.exec(sql) })
 
     // Plain-column indexes (tenant_id, created_at, visitor_id, etc.) are generated into
     // SCHEMA_SQL_SQLITE from seed-data.ts's declarative `idx` field — see the `if` block above.
@@ -898,6 +902,36 @@ export class BetterSqlite3Adapter implements StorageAdapter {
       this.stmt('DELETE FROM consent_records WHERE visitor_id = ?').run(visitor_id)
     }
     return toDelete.length
+  }
+
+  // ── Entity records ─────────────────────────────────────────────────────────
+
+  async putEntity(record: EntityRecord): Promise<void> {
+    const { sql, params } = entityUpsert('entity_records', 'sqlite', record)
+    this.stmt(sql).run(...params)
+  }
+
+  async getEntity(tenantId: string, collection: EntityCollection, id: string): Promise<EntityRecord | null> {
+    const row = this.stmt(
+      'SELECT * FROM entity_records WHERE id = ? AND tenant_id = ? AND collection = ?'
+    ).get(id, tenantId, collection) as unknown as EntityRow | undefined | null
+    return row ? rowToEntity(row) : null
+  }
+
+  async listEntities(filter: EntityFilter, options?: EntityListOptions): Promise<EntityRecord[]> {
+    const { sql, params } = entitySelect('entity_records', filter, qmark, options)
+    return (this.stmt(sql).all(...params) as unknown as EntityRow[]).map(rowToEntity)
+  }
+
+  async countEntities(filter: EntityFilter): Promise<number> {
+    const { sql, params } = entityWhere(filter, qmark)
+    const row = this.stmt(`SELECT COUNT(*) AS n FROM entity_records WHERE ${sql}`).get(...params) as unknown as { n: number }
+    return Number(row.n)
+  }
+
+  async deleteEntities(filter: EntityFilter): Promise<number> {
+    const { sql, params } = entityWhere(filter, qmark)
+    return Number(this.stmt(`DELETE FROM entity_records WHERE ${sql}`).run(...params).changes)
   }
 
   // ── API Keys ───────────────────────────────────────────────────────────────

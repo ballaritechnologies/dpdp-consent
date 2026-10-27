@@ -1,6 +1,6 @@
 import type {
   ConsentDbRecord, ConsentVerifyResult, CreateConsentInput, UpdateConsentInput,
-  ComplianceConfig, TcfConfig, GppConfig, CategoryMap, CookieMap, ProfileConfig, StorageAdapter, PublicProfileResponse,
+  ComplianceConfig, TcfConfig, GppConfig, CategoryMap, ConsentReceiptAction, CookieMap, ProfileConfig, StorageAdapter, PublicProfileResponse,
 } from '@consenti/types'
 import type { RecordProfileRef } from '../core/consent-engine'
 import { buildConsentValue, verifyConsent, validateConsentInput, buildTcfPayload, buildConsentSignaturePayload } from '../core/consent-engine'
@@ -17,6 +17,7 @@ import type { AuditRepo } from '../repositories/audit.repo'
 import type { PluginEngine } from '../core/plugin-engine'
 import type { EventEmitter } from 'node:events'
 import { applyCookiesOverride } from './profile.service'
+import type { ReceiptWriter } from './receipt.service'
 
 export class ConsentService {
   constructor(
@@ -33,6 +34,7 @@ export class ConsentService {
     private dataSigningHash?: string,
     private gppConfig?: GppConfig,
     private archivedSnapshot?: (profileId: string, version?: number) => Promise<PublicProfileResponse | null>,
+    private receipts?: ReceiptWriter,
   ) { }
 
   private sign(payload: { tenantId: string; visitorId: string; profileId: string; locale: string; consentJson: ConsentDbRecord['consentJson'] }): string | undefined {
@@ -235,6 +237,11 @@ export class ConsentService {
       newData: record,
     })
 
+    await this.receipts?.record({
+      tenantId: record.tenantId, visitorId: input.visitorId, action: existing ? 'updated' : 'given',
+      record, profile, categories, previous: existing,
+    })
+
     if (existing) {
       this.eventBus?.emit('consent:updated', { previous: existing, current: record })
       await this.pluginEngine?.runAfterConsentUpdate(record)
@@ -246,7 +253,12 @@ export class ConsentService {
     return record
   }
 
-  async update(visitorId: string, input: UpdateConsentInput): Promise<ConsentDbRecord> {
+  /** `receipt` overrides what the consent receipt records (e.g. a purpose lapsing by retention). */
+  async update(
+    visitorId: string,
+    input: UpdateConsentInput,
+    receipt: { action?: ConsentReceiptAction; expiredPurposes?: string[] } = {},
+  ): Promise<ConsentDbRecord> {
     const existing = await this.consents.get(visitorId)
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
 
@@ -302,9 +314,21 @@ export class ConsentService {
       oldData: existing,
       newData: record,
     })
+    await this.receipts?.record({
+      tenantId: record.tenantId, visitorId, action: receipt.action ?? 'updated',
+      record, profile, categories: categories2, previous: existing,
+      ...(receipt.expiredPurposes ? { expiredPurposes: receipt.expiredPurposes } : {}),
+    })
     this.eventBus?.emit('consent:updated', { previous: existing, current: record })
     await this.pluginEngine?.runAfterConsentUpdate(record)
     return record
+  }
+
+  /** The purposes (categories) of a profile, resolved through its consent template if needed. */
+  async purposesFor(profileId: string): Promise<CategoryMap | null> {
+    const profile = await this.profiles.get(profileId)
+    if (!profile) return null
+    return (await this.resolveTemplateData(profile.profileJson)).categories
   }
 
   get(visitorId: string): Promise<ConsentDbRecord | null> {
@@ -333,13 +357,27 @@ export class ConsentService {
     const existing = await this.consents.get(visitorId)
     await this.consents.delete(visitorId)
     await this.visitors.delete(visitorId)
+    // The audit log keeps only a digest of what was erased, never the decisions themselves —
+    // otherwise erasing a visitor would leave their consent record behind in the log.
     await this.audit.log({
       tenantId: this.tenantId,
       action: 'consent:erased',
       resourceType: 'consent',
       resourceId: visitorId,
-      ...(existing != null ? { oldData: existing } : {}),
+      ...(existing != null ? {
+        oldData: {
+          consentRecordId: existing.id, profileId: existing.profileId,
+          ...(existing.profileVersion !== undefined ? { profileVersion: existing.profileVersion } : {}),
+          createdAt: existing.createdAt, updatedAt: existing.updatedAt,
+        },
+      } : {}),
     })
+    if (existing) {
+      const profile = await this.profiles.get(existing.profileId)
+      await this.receipts?.record({
+        tenantId: existing.tenantId, visitorId, action: 'erased', record: null, profile, categories: {}, previous: existing,
+      })
+    }
     this.eventBus?.emit('consent:erased', { visitorId })
   }
 }

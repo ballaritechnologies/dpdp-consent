@@ -117,6 +117,11 @@ const BACKEND_GUIDES = [
     desc: 'Pick per site whether visitors get the DPDP flow, or DPDP for India and GDPR for the EU/EEA/UK.',
   },
   {
+    href: '/guides/backend/records',
+    title: 'Records: Receipts, Notices, Deletion Requests',
+    desc: 'Signed consent receipts, notice version history, a deletion-request inbox and purpose-based retention.',
+  },
+  {
     href: '/guides/backend/storage',
     title: 'Choosing a Storage Driver',
     desc: 'Compare JSON, SQLite, PostgreSQL, MySQL, and MongoDB — and when to use each.',

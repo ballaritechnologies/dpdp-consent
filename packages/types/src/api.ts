@@ -770,6 +770,153 @@ export interface UpdateTenantInput {
   slug?: string
 }
 
+// ─── Entity records (Ijazat record-keeping) ───────────────────────────────────
+// One generic, per-tenant store behind receipts, notice versions, erasure requests and the later
+// record types, so adding a record type needs no schema migration on any driver.
+
+/** What an entity record is. Each record type's `data` shape is owned by its service. */
+export type EntityCollection =
+  | 'consent_receipt'
+  | 'notice_version'
+  | 'erasure_request'
+  | 'retention_policy'
+
+export interface EntityRecord<T extends object = Record<string, unknown>> {
+  id: string
+  tenantId: string
+  collection: EntityCollection
+  /** Lookup key, e.g. the hashed visitor ID of a receipt, or a profile ID. */
+  ref: string | null
+  status: string | null
+  /** ISO timestamp (UTC) a record is due by, when the record type has a deadline. */
+  dueAt: string | null
+  /** ISO timestamp (UTC). */
+  createdAt: string
+  /** ISO timestamp (UTC). */
+  updatedAt: string
+  data: T
+}
+
+export interface EntityFilter {
+  tenantId: string
+  collection: EntityCollection
+  ref?: string
+  status?: string
+  /** Only records with `dueAt` before this ISO timestamp. */
+  dueBefore?: string
+  /** Only records created before this ISO timestamp. */
+  createdBefore?: string
+  /** Only records created at or after this ISO timestamp. */
+  createdFrom?: string
+}
+
+export interface EntityListOptions {
+  /** Default 50, capped by the caller. */
+  limit?: number
+  offset?: number
+  /** Default 'desc' (newest first). */
+  order?: 'asc' | 'desc'
+}
+
+/** What a consent receipt records. `withdrawn`: every optional purpose that was on is now off.
+ * `expired`: a purpose was switched off by its retention period. `erased`: the visitor's consent
+ * record was deleted. */
+export type ConsentReceiptAction = 'given' | 'updated' | 'withdrawn' | 'expired' | 'erased'
+
+/** Per purpose (category): all of its items granted, none, or some. */
+export type PurposeState = 'granted' | 'denied' | 'partial'
+
+/** `data` of a `consent_receipt` entity. The entity's `ref` is the hashed visitor ID, never the
+ * raw one. */
+export interface ConsentReceiptData {
+  receiptVersion: 1
+  action: ConsentReceiptAction
+  consentRecordId: string | null
+  profileId: string | null
+  profileVersion: number | null
+  /** The DPDP notice version (`dpdpa.noticeVersion`) shown, when the profile sets one. */
+  noticeVersion: string | null
+  complianceGroup: string | null
+  regulation: string | null
+  locale: string | null
+  source: string | null
+  gpcDetected: boolean
+  purposes: Record<string, PurposeState>
+  /** Per-item decisions, as stored on the consent record. */
+  consent: Record<string, string>
+  /** Purposes switched off by this receipt's action (`expired`). */
+  expiredPurposes?: string[]
+  /** HMAC-SHA256 over the receipt's fields and its time, with the server's data-signing secret. */
+  signature: string
+}
+
+export type ServerConsentReceipt = EntityRecord<ConsentReceiptData>
+
+/** `data` of a `notice_version` entity (`ref` = profile ID). One per saved profile version. */
+export interface NoticeVersionData {
+  profileId: string
+  profileName: string
+  profileVersion: number
+  noticeVersion: string | null
+  noticeStatus: 'draft' | 'reviewed' | null
+  complianceGroup: string | null
+  regulation: string | null
+  defaultLocale: string
+  /** SHA-256 of the profile JSON as saved: two versions with the same hash showed the same notice. */
+  contentHash: string
+  change: 'created' | 'updated'
+  actorId: string | null
+}
+
+export type NoticeVersion = EntityRecord<NoticeVersionData>
+
+export type ErasureRequestStatus = 'received' | 'verifying' | 'in_progress' | 'completed' | 'rejected'
+export type ErasureRequestChannel = 'widget' | 'email' | 'dashboard' | 'api' | 'other'
+
+export interface ErasureRequestEvent {
+  at: string
+  status: ErasureRequestStatus
+  actorId: string | null
+  note: string | null
+}
+
+/** `data` of an `erasure_request` entity (`ref` = hashed visitor ID when known). */
+export interface ErasureRequestData {
+  channel: ErasureRequestChannel
+  /** How to reach the requester (e.g. an email), when they gave one. Personal data: deleted with
+   * the request when its retention period ends. */
+  contact: string | null
+  message: string | null
+  /** The raw visitor ID, kept only until the request is closed so it can be erased. */
+  visitorId: string | null
+  /** Whether closing as `completed` erased the visitor's consent record. */
+  consentErased: boolean
+  history: ErasureRequestEvent[]
+}
+
+export type ErasureRequest = EntityRecord<ErasureRequestData>
+
+/** Per-tenant retention policy (stored as a `retention_policy` entity). Unset = keep. */
+export interface RetentionPolicy {
+  /** Days after which a granted purpose (category ID) lapses to denied unless renewed. */
+  purposeExpiryDays?: Record<string, number>
+  /** Days to keep consent receipts. */
+  receiptDays?: number
+  /** Days to keep closed (completed or rejected) erasure requests. */
+  closedErasureRequestDays?: number
+  /** Days a new erasure request is due in. Default 30. */
+  erasureResponseDays?: number
+}
+
+export interface RetentionRunResult {
+  dryRun: boolean
+  ranAt: string
+  /** Visitors (hashed) whose purposes lapsed, with the purposes. */
+  expired: { visitorRef: string; purposes: string[] }[]
+  receiptsDeleted: number
+  erasureRequestsDeleted: number
+}
+
 // ─── Storage adapter ──────────────────────────────────────────────────────────
 
 export interface StorageAdapter {
@@ -831,6 +978,15 @@ export interface StorageAdapter {
   deleteApiKey(id: string): Promise<void>
   getApiKeys(tenantId: string): Promise<ApiKey[]>
   purgeExpiredConsents(olderThanDays: number): Promise<number>
+
+  /** Insert, or replace the record with the same id (and tenant). */
+  putEntity(record: EntityRecord<object>): Promise<void>
+  getEntity(tenantId: string, collection: EntityCollection, id: string): Promise<EntityRecord | null>
+  /** Ordered by `createdAt` (then id). */
+  listEntities(filter: EntityFilter, options?: EntityListOptions): Promise<EntityRecord[]>
+  countEntities(filter: EntityFilter): Promise<number>
+  /** Deletes every record matching the filter; returns how many went. */
+  deleteEntities(filter: EntityFilter): Promise<number>
 
   createConsentTemplate(data: import('./ui').CreateConsentTemplateInput): Promise<import('./ui').ServerConsentTemplate>
   updateConsentTemplate(id: string, data: import('./ui').UpdateConsentTemplateInput): Promise<import('./ui').ServerConsentTemplate>

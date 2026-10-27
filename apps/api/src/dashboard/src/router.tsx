@@ -32,6 +32,7 @@ const routeImports = {
   TenantList: () => import('./pages/TenantList'),
   VendorList: () => import('./pages/VendorList'),
   AuditLog: () => import('./pages/AuditLog'),
+  Records: () => import('./pages/Records'),
   Settings: () => import('./pages/Settings'),
   ChangePassword: () => import('./pages/ChangePassword'),
   ApiConfig: () => import('./pages/ApiConfig'),
@@ -55,6 +56,7 @@ const RoleList = lazy(() => routeImports.RoleList().then((m) => ({ default: m.Ro
 const TenantList = lazy(() => routeImports.TenantList().then((m) => ({ default: m.TenantList })))
 const VendorList = lazy(() => routeImports.VendorList().then((m) => ({ default: m.VendorList })))
 const AuditLogPage = lazy(() => routeImports.AuditLog().then((m) => ({ default: m.AuditLogPage })))
+const Records = lazy(() => routeImports.Records().then((m) => ({ default: m.Records })))
 const Settings = lazy(() => routeImports.Settings().then((m) => ({ default: m.Settings })))
 const ChangePassword = lazy(() => routeImports.ChangePassword().then((m) => ({ default: m.ChangePassword })))
 const ApiConfig = lazy(() => routeImports.ApiConfig().then((m) => ({ default: m.ApiConfig })))
@@ -185,6 +187,7 @@ function renderRoute(hash: string) {
   if (hash === '#/tenants') return <TenantList current={hash} />
   if (hash === '#/vendors' || hash.startsWith('#/vendors?')) return <VendorList current={hash} />
   if (hash === '#/audit' || hash.startsWith('#/audit?')) return <AuditLogPage current={hash} />
+  if (hash === '#/records' || hash.startsWith('#/records/')) return <Records current={hash} />
   if (hash === '#/api/config') return <ApiConfig current={hash} />
   if (hash === '#/settings') return <Settings current={hash} />
   if (hash === '#/settings/change-password') return <ChangePassword current={hash} />

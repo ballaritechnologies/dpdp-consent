@@ -3,7 +3,7 @@ import {
   LayoutDashboard, ClipboardList, Cookie, Palette, ShieldCheck,
   Users, Key, Shield, Globe, SatelliteDish, ScrollText, Settings,
   LogOut, Plug, BarChart3,
-  ChevronDown, TicketSlash, HelpCircle
+  ChevronDown, TicketSlash, HelpCircle, FileCheck2
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '../context/auth'
@@ -51,6 +51,7 @@ const NAV: NavEntry[] = [
   { key: 'nav.roles', hash: '#/roles', Icon: Shield, perm: 'role:view' },
   { key: 'nav.sites', hash: '#/tenants', Icon: Globe, perm: 'settings:update', superadminOnly: true },
   { key: 'nav.vendors', hash: '#/vendors', Icon: SatelliteDish, perm: 'consent:view' },
+  { key: 'nav.records', hash: '#/records', Icon: FileCheck2, perm: 'consent:view' },
   { key: 'nav.audit', hash: '#/audit', Icon: ScrollText, perm: 'audit:view' },
   { key: 'nav.api', hash: '#/api/config', Icon: Plug, perm: 'settings:update' },
   { key: 'nav.settings', hash: '#/settings', Icon: Settings },

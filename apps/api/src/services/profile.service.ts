@@ -1,4 +1,5 @@
 import type { Profile, CreateProfileInput, UpdateProfileInput, PublicProfileResponse, ProfileSummary, ProfileVersionEntry, ArchivedProfileSummary, StorageAdapter, CookieMap, S3ApiConfig, MainBanner, GpcBanner, PreferenceModal, LocaleContentInput, StoredProfileJson, CategoryMap, TemplateBannerDef, TemplateGpcBannerDef, TemplateModalDef, TemplateButtonMap, ButtonStyle, ButtonAction, AgeGateModalContent } from '@consenti/types'
+import type { NoticeVersionWriter } from './notice-version.service'
 import type { ProfileRepo } from '../repositories/profile.repo'
 import type { AuditRepo } from '../repositories/audit.repo'
 import type { EventEmitter } from 'node:events'
@@ -76,6 +77,7 @@ export class ProfileService {
     private profilesDir?: string,
     private handleCache?: (paths: string[], profileId: string, isPurge: boolean) => void,
     private s3Config?: S3ApiConfig,
+    private noticeVersions?: NoticeVersionWriter,
   ) { }
 
   /** Root directory holding every version snapshot of one logical profile, keyed by its stable id. */
@@ -184,6 +186,7 @@ export class ProfileService {
       resourceId: profile.id,
       newData: { profileId: profile.id, version: profile.version, complianceGroup: this.groupKey(profile.profileJson) },
     })
+    await this.noticeVersions?.record(profile, 'created', actorId ?? null)
     this.eventBus?.emit('profile:created', profile)
 
     if (this.profilesDir) {
@@ -265,6 +268,7 @@ export class ProfileService {
       oldData: { profileId: old.id, version: old.version },
       newData: { profileId: profile.id, version: profile.version, complianceGroup: this.groupKey(profile.profileJson) },
     })
+    await this.noticeVersions?.record(profile, 'updated', actorId ?? null)
     this.eventBus?.emit('profile:updated', { previous: old, current: profile })
 
     if (this.profilesDir) {

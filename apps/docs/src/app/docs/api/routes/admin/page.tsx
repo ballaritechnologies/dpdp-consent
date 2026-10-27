@@ -2102,6 +2102,19 @@ ${AUTH_HEADER}
         ]}
       />
 
+      {/* ── Records ──────────────────────────────────────────────── */}
+
+      <h2>Records</h2>
+      <p>
+        Consent receipts (<code>GET /receipts</code>), notice versions (<code>GET /notice-versions</code>),
+        the deletion-request inbox (<code>GET</code> / <code>POST /erasure-requests</code>,{' '}
+        <code>GET</code> / <code>PATCH /erasure-requests/:id</code>), retention (<code>GET</code> /{' '}
+        <code>PUT /retention/policy</code>, <code>POST /retention/run</code>) and their exports
+        (<code>/export/receipts</code>, <code>/export/erasure-requests</code>,{' '}
+        <code>/export/notice-versions</code>). Payloads, permissions and behaviour:{' '}
+        <a href="/guides/backend/records">Records guide</a>.
+      </p>
+
       {/* ── Stats ────────────────────────────────────────────────── */}
 
       <h2>Stats</h2>

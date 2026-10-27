@@ -104,6 +104,15 @@ await ready`}
           </tr>
           <tr>
             <td>
+              <code>consent:purposes_expired</code>
+            </td>
+            <td>The retention job switched off purposes whose expiry period passed</td>
+            <td>
+              <code>{'{ tenantId: string, visitorId: string, purposes: string[] }'}</code>
+            </td>
+          </tr>
+          <tr>
+            <td>
               <code>visitor:created</code>
             </td>
             <td>A new visitor record is created</td>
@@ -288,6 +297,22 @@ new CategoryAction({
         code={`eventBus.on('consent:erased', ({ visitorId }: { visitorId: string }) => {
   // Mirror the deletion to a data warehouse or external DMP
   myDmpClient.deleteVisitor(visitorId)
+})`}
+      />
+
+      {/* ── consent:purposes_expired ──────────────────────────────────────── */}
+      <h2>consent:purposes_expired</h2>
+      <p>
+        Fires when the retention job switches a visitor&apos;s purposes to denied because their
+        expiry period passed (see the <a href="/guides/backend/records">Records guide</a>). The
+        consent record is already updated, and an <code>expired</code> receipt written, before this
+        event fires; <code>consent:updated</code> fires for the same change.
+      </p>
+      <CodeBlock
+        lang="ts"
+        code={`eventBus.on('consent:purposes_expired', ({ visitorId, purposes }) => {
+  // e.g. stop server-side processing for those purposes
+  myPipeline.stop(visitorId, purposes)
 })`}
       />
 

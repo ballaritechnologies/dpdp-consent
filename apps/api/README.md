@@ -71,6 +71,7 @@ SQL drivers (SQLite, PostgreSQL, MySQL/MariaDB) track a schema version (the `con
 |---|---|
 | 2 | `consent_records.profile_id` / `notice_shown.profile_id` no longer reference `profiles` (a consent record is evidence and survives deleting its profile); `profile_version` added to `consent_records` and `consent_history` — with `profile_id` it pins the exact on-disk snapshot a visitor was shown. |
 | 3 | Nullable `regime_json` column added to `tenant_settings` (per-site consent regime, see [Consent regimes](#consent-regimes)). Additive only: no table rebuild and no SQLite backup copy. |
+| 4 | New `entity_records` table holding consent receipts, notice versions, deletion requests and retention policies (see [Records](#records-receipts-notice-versions-deletion-requests-retention)). Additive only: `CREATE TABLE` / `CREATE INDEX IF NOT EXISTS`; the database user needs `CREATE` (and `INDEX` on MySQL). |
 
 The upgrade changes table structure only — it never edits, drops or re-creates your rows — and is built to fail safe:
 
@@ -718,6 +719,21 @@ POST /consenti/api/v1/consent/parental-consent-resolve
 // 403 { "error": "Invalid or expired token (invalid_signature)" }
 ```
 
+### Deletion request (from the widget)
+
+Opens a request in the dashboard's deletion-request inbox. Unlike `DELETE /consent/:visitorId`, nothing is erased straight away.
+
+```http
+POST /consenti/api/v1/consent/visitor-uuid/erasure-request
+Cookie: consenti_visitor-uuid=...
+
+{ "contact": "me@example.com", "message": "Please delete my account data too." }
+```
+
+```json
+{ "id": "erq_…", "status": "received", "dueAt": "2026-11-26T10:00:00.000Z" }
+```
+
 ---
 
 ## Admin REST API
@@ -1021,6 +1037,24 @@ Backs the dashboard's one-time first-run wizard (see [First-Run Setup Wizard](#f
 |--------|--------------|---------------------------------------------------------|
 | `GET`  | `/audit`     | Paginated audit log; filter by `action`, `resourceType`, date range, `q` (**prefix** search across action, resourceType, resourceId, userId). Response: `{ items, total, page, limit }`; list rows omit `oldData`/`newData` — fetch `GET /audit/:id` for the full entry. |
 | `GET`  | `/audit/:id` | Full audit log entry (`oldData`/`newData`) — list rows omit these for performance; fetch on demand |
+
+### Records (receipts, notice versions, deletion requests, retention)
+
+All take `?tenantId=` (checked against the caller's allowed tenants). Details: [docs/records.md](../../docs/records.md).
+
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| `GET` | `/receipts` | `consent:view` | Signed consent receipts, newest first; filter by `visitorId` (matched through its hash), `action`, `from`, `to`. Each item has `verified`. |
+| `GET` | `/notice-versions` | `consent:view` | One entry per saved profile version (notice version, review status, content hash); filter by `profileId`. |
+| `GET` | `/erasure-requests` | `consent:view` | Deletion requests; filter by `status`, or `overdue=1`. Includes `open` / `overdue` counts. |
+| `POST` | `/erasure-requests` | `settings:update` | Log a request from email or another channel (`channel`, `contact`, `visitorId`, `message`). |
+| `GET` | `/erasure-requests/:id` | `consent:view` | One request with its history. |
+| `PATCH` | `/erasure-requests/:id` | `settings:update` | `{ status, note?, eraseConsent? }`; rejecting needs a note; closed requests can't change. |
+| `GET` / `PUT` | `/retention/policy` | `consent:view` / `settings:update` | `{ purposeExpiryDays?, receiptDays?, closedErasureRequestDays?, erasureResponseDays? }` (whole days, 1–36500). |
+| `POST` | `/retention/run` | `settings:update` | Run retention now; a dry run unless `{ "dryRun": false }`. Also runs daily. |
+| `GET` | `/export/receipts`, `/export/erasure-requests`, `/export/notice-versions` | `export:run` | `format=csv` (default) or `json`. |
+
+Events: `consent:purposes_expired` (`{ tenantId, visitorId, purposes }`) when retention switches purposes off. The `consent:erased` audit entry now keeps only a digest of the erased record (id, profile, version, timestamps), not the decisions.
 
 ### Multi-Tenant
 

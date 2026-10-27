@@ -1,8 +1,10 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises'
+import { matchesEntity, compareEntities, clampLimit } from '../entity-sql'
 import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import { randomProfileId, randomVisitorId, randomConsentId, randomConsentTemplateId, randomUITemplateId } from '../../utils/crypto'
 import type {
+  EntityRecord, EntityFilter, EntityListOptions, EntityCollection,
   StorageAdapter,
   StorageConfig,
   Profile,
@@ -87,6 +89,7 @@ interface JsonDb {
   api_keys: ApiKey[]
   settings: Record<string, TenantSettings>
   notice_shown: NoticeShownRecord[]
+  entity_records: EntityRecord[]
 }
 
 function emptyDb(): JsonDb {
@@ -108,6 +111,7 @@ function emptyDb(): JsonDb {
     api_keys: [],
     settings: {},
     notice_shown: [],
+    entity_records: [],
   }
 }
 
@@ -766,6 +770,42 @@ export class JsonFileAdapter implements StorageAdapter {
     this.db.consents = this.db.consents.filter(c => !toDelete.has(c.visitorId))
     this.scheduleWrite()
     return toDelete.size
+  }
+
+  // ── Entity records ─────────────────────────────────────────────────────────
+
+  async putEntity(record: EntityRecord): Promise<void> {
+    const copy: EntityRecord = structuredClone(record)
+    const i = this.db.entity_records.findIndex(r => r.id === record.id)
+    if (i === -1) this.db.entity_records.push(copy)
+    else if (this.db.entity_records[i]!.tenantId === record.tenantId) this.db.entity_records[i] = { ...copy, createdAt: this.db.entity_records[i]!.createdAt }
+    else throw new Error('Entity id already in use')
+    this.scheduleWrite()
+  }
+
+  async getEntity(tenantId: string, collection: EntityCollection, id: string): Promise<EntityRecord | null> {
+    const r = this.db.entity_records.find(e => e.id === id && e.tenantId === tenantId && e.collection === collection)
+    return r ? structuredClone(r) : null
+  }
+
+  async listEntities(filter: EntityFilter, options: EntityListOptions = {}): Promise<EntityRecord[]> {
+    const offset = Math.max(0, Math.floor(options.offset ?? 0))
+    return this.db.entity_records.filter(r => matchesEntity(r, filter))
+      .sort(compareEntities(options.order))
+      .slice(offset, offset + clampLimit(options.limit))
+      .map(r => structuredClone(r))
+  }
+
+  async countEntities(filter: EntityFilter): Promise<number> {
+    return this.db.entity_records.filter(r => matchesEntity(r, filter)).length
+  }
+
+  async deleteEntities(filter: EntityFilter): Promise<number> {
+    const before = this.db.entity_records.length
+    this.db.entity_records = this.db.entity_records.filter(r => !matchesEntity(r, filter))
+    const removed = before - this.db.entity_records.length
+    if (removed) this.scheduleWrite()
+    return removed
   }
 
   // ── API Keys ───────────────────────────────────────────────────────────────

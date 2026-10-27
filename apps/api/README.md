@@ -631,7 +631,9 @@ A site can set a **regime**, a routing policy applied after the jurisdiction map
 | *unset* | jurisdiction map (unchanged behaviour) | | |
 | `dpdp` | `opt-in-dpdpa` | `opt-in-dpdpa` | `opt-in-dpdpa` |
 | `dpdp_gdpr` | `opt-in-dpdpa` | `opt-in` | `regimeDefaultGroup` (default `opt-in`) |
-| `strictest_global` | planned, not implemented: rejected with `501` | | |
+| `strictest_global` | `opt-in-dpdpa`, hardened | `opt-in-dpdpa`, hardened | `opt-in-dpdpa`, hardened |
+
+*Hardened*: `/resolve-profile` returns a `hardening` block the widget applies (GPC honoured for advertising items, consent expiry capped at 365 days), and the server refuses advertising items on every consent write that carries GPC.
 
 Set it in the dashboard (Settings → Consent regime) or with `PATCH /consenti/admin/v1/settings[?tenantId=…]` and `{ "regime": "dpdp_gdpr", "regimeDefaultGroup": "opt-out" }` (`null` clears either field). Changes are audit-logged as `settings:regime_updated`. The UK matches as both `GB` and `UK`; Switzerland is not EU/EEA/UK and gets the default group. Choosing a regime is not legal advice. See the [Consent regimes guide](https://consenti.dev/guides/backend/consent-regimes).
 
@@ -1070,6 +1072,10 @@ Incident log with a 72-hour countdown to the Data Protection Board report, remin
 | `GET` | `/export/incidents` | `export:run` | CSV or JSON. |
 
 Server event `breach:deadline` (`{ tenantId, incidentId, title, dueAt, threshold, hoursLeft }`) fires at 48, 24 and 6 hours left and when overdue (checked every 15 minutes). Templates: `templates/breach/` (shipped in `dist/templates/breach/`); override with `compliance.breachTemplatesDir`.
+
+### Consent Managers
+
+`compliance.consentManagers: ConsentManagerAdapter[]` connects registered Consent Managers. Each notifies `POST /consenti/api/v1/consent-managers/:adapterId/notify`; the adapter authenticates the request, Ijazat records the artefact and a receipt (source `consent_manager:<id>`) and emits `consent_manager:event` (`{ tenantId, adapterId, type, artefactId, principalRef, status, consent }`). `GET /consent-manager-artefacts` (`consent:view`) lists them. `MockConsentManager` is for development only. Ijazat is not a Consent Manager. Details: [docs/consent-managers.md](../../docs/consent-managers.md).
 
 ### Multi-Tenant
 

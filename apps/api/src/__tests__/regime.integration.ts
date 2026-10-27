@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
   EMBEDDED_COMPLIANCE_MAP,
-  RegimeNotImplementedError,
+  regimeHardening, hardenProfile,
   resolveRegimeGroup,
 } from '@consenti/utils'
 import type { StorageAdapter, StorageConfig, TenantSettings } from '@consenti/types'
@@ -96,9 +96,22 @@ describe('resolveRegimeGroup — dpdp_gdpr', () => {
 })
 
 describe('resolveRegimeGroup — strictest_global', () => {
-  test('is a stub that throws "not implemented"', () => {
-    assert.throws(() => resolveRegimeGroup('strictest_global', 'IN'), RegimeNotImplementedError)
-    assert.throws(() => resolveRegimeGroup('strictest_global', 'DE'), /not implemented/)
+  test('everyone gets the DPDP flow, wherever they are', () => {
+    for (const c of ['IN', 'DE', 'GB', 'US', 'BR', '']) assert.equal(resolveRegimeGroup('strictest_global', c), 'opt-in-dpdpa', c)
+  })
+
+  test('hardening: GPC honoured for advertising, expiry capped, strict GPC never loosened', () => {
+    assert.equal(regimeHardening('dpdp'), null)
+    const h = regimeHardening('strictest_global')!
+    const profile = { gpcMode: 'ignore' as const, expiryDays: 730, cookies: { ad: { purpose: 'marketing', listenGpc: false }, stats: { purpose: 'analytics', listenGpc: false } } }
+    const hard = hardenProfile(profile, h)
+    assert.equal(hard.gpcMode, 'honor')
+    assert.equal(hard.expiryDays, 365)
+    assert.equal(hard.cookies.ad.listenGpc, true)
+    assert.equal(hard.cookies.stats.listenGpc, false)
+    assert.equal(hardenProfile({ ...profile, gpcMode: 'strict' as const, expiryDays: 90 }, h).gpcMode, 'strict')
+    assert.equal(hardenProfile({ ...profile, expiryDays: 90 }, h).expiryDays, 90)
+    assert.equal(profile.cookies.ad.listenGpc, false, 'input not mutated')
   })
 })
 
@@ -208,11 +221,14 @@ describe('public geo-routing endpoints with a regime', () => {
     assert.equal(lookups[0]?.group, 'opt-out')
   })
 
-  test('strictest_global (only reachable via a hand-edited store) → 501', async () => {
-    const { routes } = setup({ country: 'IN', settings: { default: { regime: 'strictest_global' } } })
+  test('strictest_global: everyone gets the DPDP flow plus the hardening block', async () => {
+    const { routes } = setup({ country: 'US', settings: { default: { regime: 'strictest_global' } } })
     const { status, body } = await resolve(routes)
-    assert.equal(status, 501)
-    assert.match(String(body['error'] ?? body['message']), /not implemented/)
+    assert.equal(status, 200)
+    assert.equal(body['complianceGroup'], 'opt-in-dpdpa')
+    assert.deepEqual(body['hardening'], { gpcMode: 'honor', gpcItemPurposes: ['marketing'], maxExpiryDays: 365 })
+    const plain = await resolve(setup({ country: 'US', settings: { default: { regime: 'dpdp' } } }).routes)
+    assert.equal(plain.body['hardening'], undefined)
   })
 
   test('multi-tenant: ?tenant= selects that tenant\'s regime and profiles', async () => {
@@ -412,10 +428,10 @@ describe('admin settings API — regime', () => {
     assert.equal((await call('PATCH', { body: { regimeDefaultGroup: 'custom-group' } })).status, 400)
   })
 
-  test('strictest_global is rejected as not implemented', async () => {
+  test('strictest_global can be set', async () => {
     const r = await call('PATCH', { body: { regime: 'strictest_global' } })
-    assert.equal(r.status, 501)
-    assert.equal((await storage.getSettings('default')).regime, undefined)
+    assert.equal(r.status, 200)
+    assert.equal((await storage.getSettings('default')).regime, 'strictest_global')
   })
 
   test('every regime change is written to the audit log; unrelated updates are not', async () => {

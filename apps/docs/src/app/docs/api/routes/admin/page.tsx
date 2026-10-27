@@ -1845,9 +1845,9 @@ ${AUTH_HEADER}`,
       </p>
       <ul>
         <li>
-          <code>regime</code> — <code>dpdp</code>, <code>dpdp_gdpr</code>, or <code>null</code> to
-          clear it (plain jurisdiction-map routing). <code>strictest_global</code> is reserved and
-          returns <code>501</code> until it is implemented. See{' '}
+          <code>regime</code> — <code>dpdp</code>, <code>dpdp_gdpr</code>,{' '}
+          <code>strictest_global</code>, or <code>null</code> to clear it (plain jurisdiction-map
+          routing). See{' '}
           <a href="/guides/backend/consent-regimes">Consent regimes</a>.
         </li>
         <li>
@@ -2117,7 +2117,9 @@ ${AUTH_HEADER}
         <a href="/guides/backend/children">Children&apos;s data guide</a>). Breach incidents:{' '}
         <code>/incidents</code>, <code>/incidents/:id</code>, <code>/incidents/:id/milestones</code>,{' '}
         <code>/incidents/:id/notices</code>, <code>/export/incidents</code> (see the{' '}
-        <a href="/guides/backend/breaches">Breach incidents guide</a>).
+        <a href="/guides/backend/breaches">Breach incidents guide</a>). Consent Managers:{' '}
+        <code>GET /consent-manager-artefacts</code> (see the{' '}
+        <a href="/guides/backend/consent-managers">Consent Managers guide</a>).
       </p>
 
       {/* ── Stats ────────────────────────────────────────────────── */}

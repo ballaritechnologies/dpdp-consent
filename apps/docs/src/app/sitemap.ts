@@ -94,6 +94,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     page('/guides/backend/records', 0.75, 'monthly'),
     page('/guides/backend/children', 0.75, 'monthly'),
     page('/guides/backend/breaches', 0.75, 'monthly'),
+    page('/guides/backend/consent-managers', 0.75, 'monthly'),
     page('/guides/backend/storage', 0.75, 'monthly'),
     page('/guides/backend/auth', 0.75, 'monthly'),
     page('/guides/backend/server-side-enforcement', 0.75, 'monthly'),

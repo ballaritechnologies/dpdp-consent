@@ -3,7 +3,7 @@ import { httpRequest } from '../utils/http'
 import { deepMerge, resolveLocale } from '../utils/locale'
 import { logger } from '../utils/console'
 import { getBrowserGeoHints, encodeGeoHints } from '../utils/geo-hints'
-import { EMBEDDED_COMPLIANCE_MAP, findCountryEntry, resolveComplianceMapOverride, type ComplianceMapData } from '@consenti/utils'
+import { EMBEDDED_COMPLIANCE_MAP, findCountryEntry, resolveComplianceMapOverride, hardenProfile, type ComplianceMapData, type RegimeHardening } from '@consenti/utils'
 import { adaptEmbeddedProfile } from '../utils/profile-adapter'
 import { peekConsentLocale, peekConsentGroup } from './consent-store'
 
@@ -85,6 +85,16 @@ interface ResolvedUrlCache {
   /** Carried through from `/resolve-profile` so a cache hit doesn't lose the per-region
    * sensitive-data opt-in carve-out that a fresh geo-resolve would otherwise recompute. */
   requiresSensitiveOptIn?: boolean
+  /** `strictest_global` hardening from `/resolve-profile`, re-applied on a cache hit. */
+  hardening?: RegimeHardening
+}
+
+/** Only the shape the server sends; anything else is ignored rather than trusted. */
+function isHardening(v: unknown): v is RegimeHardening {
+  if (!v || typeof v !== 'object') return false
+  const h = v as Record<string, unknown>
+  return h['gpcMode'] === 'honor' && typeof h['maxExpiryDays'] === 'number' && h['maxExpiryDays'] > 0
+    && Array.isArray(h['gpcItemPurposes']) && h['gpcItemPurposes'].every(p => typeof p === 'string')
 }
 
 export function getCachedResolution(
@@ -417,11 +427,12 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
       // The cache entry's group is ground truth — it's what was actually requested — so it
       // wins over whatever (possibly absent, for a custom group) `complianceGroup` field the
       // static JSON file itself carries.
-      return {
+      const fromCache = {
         ...mapPublicProfileToResolved(json),
         complianceGroup: cached.complianceGroup,
         ...(cached.requiresSensitiveOptIn ? { requiresSensitiveOptIn: true } : {}),
       }
+      return cached.hardening ? hardenProfile(fromCache, cached.hardening) : fromCache
     }
   }
 
@@ -455,6 +466,7 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
   let complianceGroup: ComplianceGroupId
   let resolvedLocale: string
   let requiresSensitiveOptIn: boolean | undefined
+  let hardening: RegimeHardening | undefined
 
   try {
     const resolved = await httpRequest<{
@@ -463,12 +475,14 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
       locale: string
       found: boolean
       requiresSensitiveOptIn?: boolean
+      hardening?: RegimeHardening
     }>(resolveUrl, {}, config.api?.authToken)
 
     path = resolved.path
     complianceGroup = resolved.complianceGroup as ComplianceGroupId
     resolvedLocale = resolved.locale
     requiresSensitiveOptIn = resolved.requiresSensitiveOptIn
+    hardening = isHardening(resolved.hardening) ? resolved.hardening : undefined
 
     if (resolved.found && path) {
       setCachedResolution(tenantId, locale, cacheEnabled, {
@@ -478,6 +492,7 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
         tenantId,
         locale: resolvedLocale,
         ...(requiresSensitiveOptIn ? { requiresSensitiveOptIn: true } : {}),
+        ...(hardening ? { hardening } : {}),
       })
     }
   } catch {
@@ -489,11 +504,12 @@ async function scenario2A(config: ConsentiConfig): Promise<ResolvedProfile> {
   if (path) {
     const json = await fetchProfileJson(`${base}${path}`, config.api?.authToken)
     if (json && isDomainAllowed(json, trustDomain)) {
-      return {
+      const fresh = {
         ...mapPublicProfileToResolved(json),
         complianceGroup,
         ...(requiresSensitiveOptIn ? { requiresSensitiveOptIn: true } : {}),
       }
+      return hardening ? hardenProfile(fresh, hardening) : fresh
     }
   }
 

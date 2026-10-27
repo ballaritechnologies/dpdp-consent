@@ -132,6 +132,11 @@ const BACKEND_GUIDES = [
     desc: 'Incident log, 72-hour countdown to the Board report, reminders and draft notices.',
   },
   {
+    href: '/guides/backend/consent-managers',
+    title: 'Consent Managers (DPDP)',
+    desc: 'Receive consent from registered Consent Managers through an adapter, with receipts.',
+  },
+  {
     href: '/guides/backend/storage',
     title: 'Choosing a Storage Driver',
     desc: 'Compare JSON, SQLite, PostgreSQL, MySQL, and MongoDB — and when to use each.',

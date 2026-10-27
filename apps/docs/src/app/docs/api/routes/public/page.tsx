@@ -215,8 +215,10 @@ export default function PublicRoutesPage() {
         <code>opt-in-dpdpa</code>; <code>dpdp_gdpr</code> routes India to <code>opt-in-dpdpa</code>,
         the EU/EEA/UK to <code>opt-in</code>, and every other or unknown location to the site&apos;s
         configured default group. A site with no regime keeps plain jurisdiction-map routing.
-        Responds <code>501</code> if the regime is <code>strictest_global</code> (not implemented
-        yet).
+        <code>strictest_global</code> routes everyone to <code>opt-in-dpdpa</code> and adds a{' '}
+        <code>hardening</code> object to the response (<code>gpcMode</code>,{' '}
+        <code>gpcItemPurposes</code>, <code>maxExpiryDays</code>) that the widget applies to the
+        profile it loads.
       </p>
       <table>
         <thead>
@@ -887,6 +889,17 @@ fetch(\`/consenti/api/v1/resolve-profile?data=\${encodeURIComponent(data)}\`)`,
         them, <code>redirectUrl</code> and <code>message</code>. See the{' '}
         <a href="/guides/backend/children">Children&apos;s data guide</a>.
       </p>
+      <h3>
+        <Method m="POST" /> <code>/consent-managers/:adapterId/notify</code>
+      </h3>
+      <p>
+        For registered Consent Managers, not browsers. The configured adapter authenticates the
+        request and returns the consent artefact; Ijazat records it with a receipt and emits{' '}
+        <code>consent_manager:event</code>. <code>401</code> when it can&apos;t be verified,{' '}
+        <code>404</code> for an unknown adapter. See the{' '}
+        <a href="/guides/backend/consent-managers">Consent Managers guide</a>.
+      </p>
+
 
 
 

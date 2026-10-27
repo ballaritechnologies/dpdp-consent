@@ -1,7 +1,7 @@
 import type { ProfileService } from '../../services/profile.service'
 import type { GeoResolverService, ResolvedGeo } from '../../services/geo-resolver.service'
 import type { RegimeService } from '../../services/regime.service'
-import { RegimeNotImplementedError } from '@consenti/utils'
+import { RegimeNotImplementedError, hardenProfile } from '@consenti/utils'
 import { isSafeTenantId } from '../../utils/path-segment'
 import { json } from '../../utils/http'
 import { parseAcceptLanguage, sanitizeLanguages, sanitizeLocale } from '../../utils/geo-hints'
@@ -137,7 +137,12 @@ export function buildProfileRoutes(
         const routed = await routeVisitor(tenantId, await geoResolver.resolve({ ip, language, languages, timezone, locale: sanitizeLocale(requestedLocale) }))
         if (routed instanceof Response) return routed
         const geo = routed
-        const sensitiveOptIn = geo.requiresSensitiveOptIn ? { requiresSensitiveOptIn: true } : {}
+        // strictest_global: GDPR-side hardening the widget applies to the profile it then loads.
+        const hardening = options.regime ? await options.regime.hardening(tenantId) : null
+        const sensitiveOptIn = {
+          ...(geo.requiresSensitiveOptIn ? { requiresSensitiveOptIn: true } : {}),
+          ...(hardening ? { hardening } : {}),
+        }
 
         if (!geo.complianceGroup) {
           return json(200, { path: null, complianceGroup: 'opt-in', locale: requestedLocale || 'en', found: false, ...sensitiveOptIn })
@@ -225,8 +230,10 @@ export function buildProfileRoutes(
         if (!geo.complianceGroup) return errorResponse(404, 'Could not resolve compliance group for this location')
         const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup, tenantId)
         if (!profile) return errorResponse(404, `No active profile found for compliance group: ${geo.complianceGroup}`)
-        const result = await profiles.getResolved(profile.id, locale)
-        if (!result) return errorResponse(404, 'Profile not found')
+        const resolved = await profiles.getResolved(profile.id, locale)
+        if (!resolved) return errorResponse(404, 'Profile not found')
+        const hardening = options.regime ? await options.regime.hardening(tenantId) : null
+        const result = hardening ? hardenProfile(resolved as Parameters<typeof hardenProfile>[0], hardening) : resolved
         return json(200, {
           ...result,
           resolvedComplianceGroup: geo.complianceGroup,

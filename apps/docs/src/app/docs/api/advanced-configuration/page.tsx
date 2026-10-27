@@ -2152,6 +2152,16 @@ handleCache: async (paths, _profileId, isPurge) => {
         </li>
       </ul>
 
+      {/* ── consentManagers ──────────────────────────────────────────────── */}
+      <h2>compliance.consentManagers</h2>
+      <p>
+        Adapters (<code>ConsentManagerAdapter</code>: <code>id</code>, <code>name</code>,{' '}
+        <code>verifyNotification()</code>) for registered Consent Managers whose notifications arrive
+        at <code>/consenti/api/v1/consent-managers/:id/notify</code>.{' '}
+        <code>MockConsentManager</code> is for development only. Ijazat is not a Consent Manager.
+        See the <a href="/guides/backend/consent-managers">Consent Managers guide</a>.
+      </p>
+
       {/* ── breachTemplatesDir ───────────────────────────────────────────── */}
       <h2>compliance.breachTemplatesDir</h2>
       <p>

@@ -28,11 +28,16 @@ reviewed by a lawyer before we describe a feature as ready; open points live in
 - Breach incident module: incident form, 72-hour countdown with reminders, DRAFT notices for the
   Data Protection Board and affected people, incident log
 
-## Later
+## v0.4: one flow everywhere, Consent Managers (built, not yet released)
 
-- `strictest_global` regime: one flow meeting the union of DPDP and GDPR requirements
+- `strictest_global` regime: the DPDP flow for everyone, with GPC honoured and consent capped at
+  a year
 - Adapter interface for registered Consent Managers (interface and mock only; Ijazat is not a
   Consent Manager)
+
+## Later
+
+- Adapters for specific Consent Managers once they are registered and publish their formats
 - More Indian languages (data-only additions; native-speaker review welcome)
 - Rebranding the bundled documentation site, and publishing packages under an Ijazat npm scope
 - Finishing multi-tenant isolation in the admin API (see [audit.md](./audit.md), section 2)

@@ -21,6 +21,7 @@ import {
 } from '../../services/erasure-request.service'
 import { RetentionPolicyError, type RetentionService } from '../../services/retention.service'
 import { ParentalConsentError, type ParentalConsentService } from '../../services/parental-consent.service'
+import type { ConsentManagerService } from '../../services/consent-manager.service'
 
 const RECEIPT_ACTIONS: readonly ConsentReceiptAction[] = ['given', 'updated', 'withdrawn', 'expired', 'erased']
 
@@ -30,6 +31,7 @@ export interface RecordServices {
   erasure: ErasureRequestService
   retention: RetentionService
   parentalConsent?: ParentalConsentService
+  consentManagers?: ConsentManagerService
 }
 
 function isoParam(url: URL, key: string): string | undefined | Response {
@@ -46,7 +48,7 @@ export function buildAdminRecordRoutes(
   secret: string,
   services: RecordServices,
 ) {
-  const { receipts, noticeVersions, erasure, retention, parentalConsent } = services
+  const { receipts, noticeVersions, erasure, retention, parentalConsent, consentManagers } = services
   const guard = tenantGuard(storage, authConfig, secret)
 
   function receiptFilter(url: URL, tenantId: string): EntityFilter | Response {
@@ -216,6 +218,19 @@ export function buildAdminRecordRoutes(
           if (err instanceof ParentalConsentError) return errorResponse(err.status, err.message)
           throw err
         }
+      }),
+
+    // ── Consent Managers ───────────────────────────────────────────────────────
+    'GET /consent-manager-artefacts': async (req: Request): Promise<Response> =>
+      withErrorHandler(async () => {
+        const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
+        if (!consentManagers) return json(200, { items: [], total: 0, page: 1, limit: 0, adapters: [] })
+        const url = new URL(req.url)
+        const p = getPagination(url); if ('error' in p) return errorResponse(400, p.error)
+        const status = url.searchParams.get('status') ?? undefined
+        if (status && !['active', 'withdrawn', 'expired'].includes(status)) return errorResponse(400, 'Unknown status')
+        const { items, total } = await consentManagers.list(g.tenantId, status, { limit: p.limit, offset: (p.page - 1) * p.limit })
+        return json(200, { items, total, page: p.page, limit: p.limit, adapters: consentManagers.listAdapters() })
       }),
 
     // ── Exports ────────────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ import { ErasureRequestService } from './services/erasure-request.service'
 import { RetentionService } from './services/retention.service'
 import { ParentalConsentService } from './services/parental-consent.service'
 import { BreachService } from './services/breach.service'
+import { ConsentManagerService } from './services/consent-manager.service'
 import { LocalAuth } from './auth/local.auth'
 import { buildProfileRoutes } from './routes/public/profile.routes'
 import { buildConsentRoutes } from './routes/public/consent.routes'
@@ -54,6 +55,7 @@ import { buildAdminStatsRoutes } from './routes/admin/stats.routes'
 import { buildAdminExportRoutes } from './routes/admin/export.routes'
 import { buildAdminRecordRoutes } from './routes/admin/records.routes'
 import { buildAdminBreachRoutes } from './routes/admin/breach.routes'
+import { buildConsentManagerRoutes } from './routes/public/consent-manager.routes'
 import { buildAdminApiKeyRoutes } from './routes/admin/apikeys.routes'
 import { buildAdminTenantRoutes } from './routes/admin/tenants.routes'
 import { buildAdminSettingsRoutes } from './routes/admin/settings.routes'
@@ -481,6 +483,12 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     join(DIST_DIR, 'templates', 'breach'),        // built package
     join(DIST_DIR, '..', 'templates', 'breach'),  // running from source
   ], eventBus)
+  const consentManagerService = new ConsentManagerService(storage, auditRepo, receiptService, async tenantId => {
+    const profile = await profileService.findActiveByComplianceGroup('opt-in-dpdpa', tenantId)
+    if (!profile) return null
+    const categories = await consentService.purposesFor(profile.id)
+    return categories ? { profile, categories } : null
+  }, compliance.consentManagers ?? [], eventBus)
   const retentionService = new RetentionService(storage, consentService, receiptService, auditRepo, eventBus)
   const erasureRequestService = new ErasureRequestService(
     storage, auditRepo, id => receiptService.visitorRef(id), id => consentService.erase(id),
@@ -555,6 +563,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
           ...buildNoticeRoutes(noticeService),
           ...buildTcfStatusRoutes(storage, compliance.tcf),
           ...buildGppStatusRoutes(storage, compliance.gpp),
+          ...buildConsentManagerRoutes(consentManagerService, resolveTenantId),
         },
       },
       {
@@ -583,7 +592,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
           ...buildAdminStatsRoutes(storage, statsService, authConfig, adminSecret),
           ...buildAdminExportRoutes(storage, authConfig, adminSecret, profileService),
           ...buildAdminRecordRoutes(storage, authConfig, adminSecret, {
-            receipts: receiptService, noticeVersions: noticeVersionService, erasure: erasureRequestService, retention: retentionService, parentalConsent: parentalConsentService,
+            receipts: receiptService, noticeVersions: noticeVersionService, erasure: erasureRequestService, retention: retentionService, parentalConsent: parentalConsentService, consentManagers: consentManagerService,
           }),
           ...buildAdminBreachRoutes(storage, authConfig, adminSecret, breachService),
           ...buildAdminApiKeyRoutes(storage, authConfig, adminSecret),
@@ -824,6 +833,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     retention: retentionService,
     parentalConsent: parentalConsentService,
     breaches: breachService,
+    consentManagers: consentManagerService,
   }
 
   return {
@@ -853,6 +863,8 @@ export { MongoDBAdapter } from './storage/mongodb/mongodb.adapter'
 export { MySQLAdapter } from './storage/mysql/mysql.adapter'
 export { PostgreSQLAdapter } from './storage/postgresql/postgresql.adapter'
 export { MockParentalConsentProvider } from './parental-consent/mock-provider'
+export { MockConsentManager } from './consent-manager/mock-adapter'
+export type { MockConsentManagerOptions } from './consent-manager/mock-adapter'
 export type { MockParentalConsentProviderOptions } from './parental-consent/mock-provider'
 
 export { ConsentAction } from './hooks/consent-action'

@@ -24,8 +24,9 @@ checker that lists consent gaps on any site.
   and a persistent **Privacy choices** button so consent can be withdrawn as easily as it was
   given. Notices in **English, Hindi, Kannada, Telugu and Tamil**; adding a language is a
   data-only change.
-- **Per-site regimes:** `dpdp` (everyone gets the DPDP flow) or `dpdp_gdpr` (India → DPDP,
-  EU/EEA/UK → GDPR, everyone else → a default you choose), set per site in the dashboard.
+- **Per-site regimes:** `dpdp` (everyone gets the DPDP flow), `dpdp_gdpr` (India → DPDP,
+  EU/EEA/UK → GDPR, everyone else → a default you choose) or `strictest_global` (the DPDP flow for
+  everyone, plus GPC honoured and consent capped at a year), set per site in the dashboard.
 - **DPDP consent checker:** `consenti-scanner dpdp <url>` crawls a site on your machine and writes
   a gap report (JSON + HTML): trackers before consent or after "Reject all", pre-ticked or bundled
   consent, no withdrawal control, no grievance contact, no Indian-language option, and sites that
@@ -39,6 +40,9 @@ checker that lists consent gaps on any site.
   verification built in).
 - **Breach incidents:** an incident log with a 72-hour countdown to the Data Protection Board
   report, reminders, and DRAFT notices for the Board and affected people from editable templates.
+- **Consent Manager adapters:** receive consent given or withdrawn through a registered DPDP
+  Consent Manager, with receipts (interface and a development mock; Ijazat is not a Consent
+  Manager).
 - **Everything from Consenti:** banner and preferences panel, consent storage and REST API, admin
   dashboard with roles, append-only audit log, CSV/JSON/XLSX export, visitor erasure, Google
   Consent Mode v2, GPC, React/Vue/Angular hooks, SQLite/Postgres/MySQL/MongoDB storage.
@@ -126,6 +130,7 @@ everyone out and invalidates signatures), and prefer Postgres: see the comments 
 | [Records](./docs/records.md) | Receipts, notice versions, deletion requests, retention |
 | [Children's data](./docs/children.md) | Age gate, parental consent, blocked purposes |
 | [Breach incidents](./docs/breaches.md) | Incident log, 72-hour countdown, draft notices |
+| [Consent Managers](./docs/consent-managers.md) | Adapters for DPDP Consent Managers |
 | [Widget: DPDP flow](./apps/ui/README.md#dpdp-flow-india) | Widget options, languages, the draft label |
 | [Server and API](./apps/api/README.md) | Configuration, storage drivers, REST API |
 | [Roadmap](./docs/roadmap.md) | What's next |

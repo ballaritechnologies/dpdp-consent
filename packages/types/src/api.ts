@@ -279,7 +279,61 @@ export interface ComplianceConfig {
   /** Folder with your own breach notice templates (`board-intimation.en.md`, …), replacing the
    * built-in drafts. Missing files fall back to the built-in ones. */
   breachTemplatesDir?: string
+  /**
+   * Adapters for registered Consent Managers (DPDP Act s.6(7)–(9)): consent a person gives,
+   * changes or withdraws through a Consent Manager reaches the site through one of these. Ijazat
+   * is not a Consent Manager; it only receives and records their notifications.
+   */
+  consentManagers?: ConsentManagerAdapter[]
 }
+
+export type ConsentManagerArtefactStatus = 'active' | 'withdrawn' | 'expired'
+
+/** A consent artefact as a Consent Manager reports it. */
+export interface ConsentManagerArtefact {
+  /** The Consent Manager's ID for this consent. */
+  artefactId: string
+  /** The Consent Manager's opaque ID for the person (never a name, phone or email). */
+  principalRef: string
+  /** Purpose (category) IDs from the site's DPDP profile, and the decision for each. */
+  purposes: { id: string; status: 'granted' | 'denied' }[]
+  status: ConsentManagerArtefactStatus
+  /** The notice version the person saw, if the Consent Manager reports it. */
+  noticeVersion?: string
+  /** ISO timestamps. */
+  givenAt: string
+  expiresAt?: string
+}
+
+export interface ConsentManagerEvent {
+  type: 'consent.granted' | 'consent.updated' | 'consent.withdrawn'
+  artefact: ConsentManagerArtefact
+}
+
+/**
+ * Connects Ijazat to one Consent Manager. `verifyNotification` must authenticate the request
+ * (signature, mTLS, …) and throw when it can't; Ijazat records only what it returns.
+ */
+export interface ConsentManagerAdapter {
+  /** Short ID used in the notification URL: `/consenti/api/v1/consent-managers/<id>/notify`. */
+  readonly id: string
+  readonly name: string
+  verifyNotification(request: { headers: Record<string, string>; body: string }): Promise<ConsentManagerEvent>
+  /** Current state of an artefact, for re-checking (optional). */
+  fetchArtefact?(artefactId: string): Promise<ConsentManagerArtefact | null>
+}
+
+/** `data` of a `cm_artefact` entity (`ref` = hash of the adapter and principal). */
+export interface ConsentManagerArtefactData {
+  adapterId: string
+  artefact: ConsentManagerArtefact
+  /** Item-level decisions derived from the purposes, against the site's DPDP profile. */
+  consent: Record<string, string>
+  profileId: string | null
+  history: { at: string; type: ConsentManagerEvent['type']; status: ConsentManagerArtefactStatus }[]
+}
+
+export type ConsentManagerArtefactRecord = EntityRecord<ConsentManagerArtefactData>
 
 export type ParentalConsentStatus = 'pending' | 'verified' | 'failed'
 
@@ -839,6 +893,7 @@ export type EntityCollection =
   | 'retention_policy'
   | 'parental_consent'
   | 'breach_incident'
+  | 'cm_artefact'
 
 export interface EntityRecord<T extends object = Record<string, unknown>> {
   id: string

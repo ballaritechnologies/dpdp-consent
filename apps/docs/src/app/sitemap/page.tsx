@@ -263,6 +263,11 @@ const GROUPS: SitemapGroup[] = [
         desc: 'Incident log, 72-hour countdown, draft notices',
       },
       {
+        href: '/guides/backend/consent-managers',
+        label: 'Consent Managers',
+        desc: 'Adapters for DPDP Consent Managers',
+      },
+      {
         href: '/guides/backend/storage',
         label: 'Storage',
         desc: 'Storage adapters and data persistence',

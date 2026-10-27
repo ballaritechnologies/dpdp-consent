@@ -63,7 +63,10 @@ export default function BackendConsentRegimesGuide() {
           </tr>
           <tr>
             <td><code>strictest_global</code></td>
-            <td colSpan={4}>Planned. Not implemented yet: the admin API rejects it with <code>501</code>.</td>
+            <td colSpan={4}>
+              <code>opt-in-dpdpa</code> for everyone, hardened: GPC is honoured as a refusal of
+              advertising (widget and server) and consent expires after at most 365 days.
+            </td>
           </tr>
         </tbody>
       </table>

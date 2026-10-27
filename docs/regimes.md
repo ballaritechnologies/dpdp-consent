@@ -9,25 +9,33 @@ geo routing: `compliance: { type: 'auto' }` with `api.enabled: true`.
 | *none* (default) | upstream's jurisdiction map, unchanged | | | |
 | `dpdp` | DPDP | DPDP | DPDP | DPDP |
 | `dpdp_gdpr` | DPDP | GDPR (`opt-in`) | your default group | your default group |
-| `strictest_global` | not available yet | | | |
+| `strictest_global` | DPDP, hardened | DPDP, hardened | DPDP, hardened | DPDP, hardened |
 
 "EU / EEA / UK" means the 27 EU countries, Iceland, Liechtenstein, Norway and the United Kingdom
 (`GB` or `UK`). Switzerland gets the default group.
 
 > Choosing a regime only decides which flow is shown. It is not legal advice; see the open
-> questions Q-R1 to Q-R4 in [legal-open-questions.md](./legal-open-questions.md).
+> questions Q-R1 to Q-R5 in [legal-open-questions.md](./legal-open-questions.md).
+
+**Hardened** means the DPDP flow plus GDPR-side protections: the Global Privacy Control signal
+from the visitor's browser is honoured as a refusal of advertising (on the DPDP flow alone it is
+ignored), and consent expires after at most 365 days. The DPDP flow already gives one choice per
+purpose, nothing pre-ticked, "Reject all" next to "Accept all", a withdrawal control and no
+"legitimate interest" basis, so it is used for everyone. See Q-R5.
 
 ## Which one?
 
 - **Mostly Indian audience, few EU visitors:** `dpdp`. One flow, simplest to review.
 - **Selling in the EU/UK and India:** `dpdp_gdpr`, with a default group that suits your other
   markets (for example `opt-out` for US-state privacy laws, or `opt-in` to be cautious).
+- **One flow everywhere, strictest settings:** `strictest_global`. Simplest to run worldwide; EU
+  visitors see DPDP wording ("Data Fiduciary"), which your lawyer should check (Q-R5).
 - **Not sure:** start with `dpdp_gdpr` and default `opt-in`, then ask your lawyer.
 
 ## What has to be in place
 
-1. **An active profile for every group the regime can send visitors to.** `dpdp` needs
-   `opt-in-dpdpa`; `dpdp_gdpr` needs `opt-in-dpdpa`, `opt-in` and your default group. The setup
+1. **An active profile for every group the regime can send visitors to.** `dpdp` and
+   `strictest_global` need `opt-in-dpdpa`; `dpdp_gdpr` needs `opt-in-dpdpa`, `opt-in` and your default group. The setup
    wizard seeds these; without one, the widget falls back to its built-in profile.
 2. **The DPDP notice details** on the DPDP profile: Data Fiduciary, grievance email, and
    optionally an officer name, a grievance page and a notice version.
@@ -44,8 +52,8 @@ Content-Type: application/json
 { "regime": "dpdp_gdpr", "regimeDefaultGroup": "opt-out" }
 ```
 
-Send `null` to clear either field. `strictest_global` returns `501` until it is implemented. Every
-change is written to the audit log as `settings:regime_updated`.
+Send `null` to clear either field. Every change is written to the audit log as
+`settings:regime_updated`.
 
 ## Several sites
 

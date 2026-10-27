@@ -13,6 +13,7 @@ Status key: **open** (not yet asked), **asked** (with the lawyer), **answered** 
 | Q-R2 | `dpdp_gdpr` sends the EU-27, Iceland, Liechtenstein, Norway and the UK to the GDPR flow. Switzerland (revFADP) is excluded and gets the site's default group. Is that list right? What about EU overseas territories and Crown Dependencies (for example Jersey, Guernsey, Isle of Man), which geo providers report under their own codes? | `packages/utils/src/regime.ts` (`GDPR_REGIME_COUNTRIES`) | open |
 | Q-R3 | When a visitor's country can't be determined, `dpdp_gdpr` uses the site's default group (`opt-in` unless configured). Is a GDPR-style opt-in an acceptable fallback, or should an unknown location get the DPDP flow (or the stricter of the two)? | `packages/utils/src/regime.ts` (`DEFAULT_REGIME_FALLBACK_GROUP`) | open |
 | Q-R4 | Returning visitors keep the flow they first consented under until their consent expires, even if the site later changes its regime or the visitor moves country. Is that acceptable, or must a regime change trigger a fresh notice? | `apps/ui/src/core/profile-resolver.ts` (`peekConsentGroup` short-circuit) | open |
+| Q-R5 | `strictest_global` gives everyone the DPDP flow, honours GPC as a refusal of advertising and caps consent at 365 days. Is that the union of DPDP and GDPR consent requirements? Is DPDP wording ("Data Fiduciary", grievance officer) acceptable for EU/UK visitors, and is 365 days the right cap? | `packages/utils/src/regime.ts` (`regimeHardening`, `STRICTEST_MAX_EXPIRY_DAYS`) | open |
 
 ## From the Phase 0 audit
 
@@ -64,3 +65,11 @@ These come from `docs/audit.md` §6.2 and will move into their phase's section w
 | Q-B2 | Are the three draft notices (Board intimation, Board report, notice to people) complete for the DPDP Rules, and what must be added for GDPR Art. 33/34 when EU/UK people are affected? | `apps/api/templates/breach/*.md` | open |
 | Q-B3 | The Hindi notice to people was written without native-speaker or legal review. Which languages must the notice to people be offered in? | `apps/api/templates/breach/user-notice.hi.md` | open |
 | Q-B4 | How long should the incident log be kept, and may it hold the names of people involved in causing a breach? | `apps/api/src/services/breach.service.ts` | open |
+
+## Consent Managers (Phase 9)
+
+| ID | Question | Where | Status |
+|---|---|---|---|
+| Q-M1 | What must a Data Fiduciary do on receiving consent or a withdrawal through a Consent Manager, and how fast? Is emitting an event for the site to act on enough on our side? | `apps/api/src/services/consent-manager.service.ts` | open |
+| Q-M2 | Purposes are matched by category ID to the site's DPDP profile; anything unknown is treated as refused. Is that safe, and should unknown purposes be rejected instead? | `consentFromArtefact` | open |
+| Q-M3 | Can we keep consent receipts for people known only by a Consent Manager's opaque reference, and for how long? | `apps/api/src/services/consent-manager.service.ts` | open |

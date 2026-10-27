@@ -31,10 +31,10 @@ practice, most optional website tracking (analytics, advertising, personalisatio
 | Language | Language the user understands | English or any language in the Eighth Schedule of the Constitution, at the person's option | English, Hindi, Kannada, Telugu, Tamil built in; more as data |
 | Withdrawal | As easy as giving consent | As easy as giving consent | Persistent **Privacy choices** button; "Reject all" in one click |
 | Complaints | Data protection officer (sometimes) and the supervisory authority | Grievance redressal by the Data Fiduciary first; then the Data Protection Board of India | Grievance officer, email and page shown in the notice |
-| Children | Parental consent below 13–16 (varies by country) for online services | Verifiable parental consent for anyone under 18; no tracking, behavioural monitoring or targeted ads aimed at children (some exemptions) | Age gate and parental-consent hooks (see roadmap) |
-| Breaches | Notify the authority within 72 hours if there is risk | Notify affected people and the Board; a detailed report to the Board within 72 hours | Breach module (see roadmap) |
-| Consent Managers | No equivalent | Registered "Consent Managers" can manage consent on a person's behalf | Adapter interface planned; Ijazat is not a registered Consent Manager |
-| GPC browser signal | Not a legal requirement | Not recognised | GPC is ignored for DPDP visitors |
+| Children | Parental consent below 13–16 (varies by country) for online services | Verifiable parental consent for anyone under 18; no tracking, behavioural monitoring or targeted ads aimed at children (some exemptions) | Age gate and parental-consent hooks ([guide](./children.md)) |
+| Breaches | Notify the authority within 72 hours if there is risk | Notify affected people and the Board; a detailed report to the Board within 72 hours | Incident log with countdown and draft notices ([guide](./breaches.md)) |
+| Consent Managers | No equivalent | Registered "Consent Managers" can manage consent on a person's behalf | Adapter interface for receiving their notifications ([guide](./consent-managers.md)); Ijazat is not a registered Consent Manager |
+| GPC browser signal | Not a legal requirement | Not recognised | Ignored on the DPDP flow; honoured as a refusal of advertising under the `strictest_global` regime |
 | Penalties | Up to 4% of global turnover or €20m | Up to ₹250 crore for some failures (e.g. security safeguards) | — |
 
 ## Timing

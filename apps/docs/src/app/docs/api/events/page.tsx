@@ -104,6 +104,15 @@ await ready`}
           </tr>
           <tr>
             <td>
+              <code>consent_manager:event</code>
+            </td>
+            <td>A Consent Manager reported consent given, changed or withdrawn — act on withdrawals</td>
+            <td>
+              <code>{'{ tenantId, adapterId, type, artefactId, principalRef, status, consent }'}</code>
+            </td>
+          </tr>
+          <tr>
+            <td>
               <code>breach:deadline</code>
             </td>
             <td>A breach incident&apos;s Board report deadline is 48, 24 or 6 hours away, or past</td>

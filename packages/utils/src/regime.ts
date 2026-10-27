@@ -30,8 +30,8 @@ export const REGIMES: Record<RegimeId, { label: string; description: string; imp
   },
   strictest_global: {
     label: 'Strictest of both, for everyone',
-    description: 'The union of DPDP and GDPR requirements for every visitor. Not implemented yet.',
-    implemented: false,
+    description: 'Every visitor gets the DPDP flow, hardened with GDPR-side protections: the Global Privacy Control signal is honoured for advertising, and consent expires after at most a year.',
+    implemented: true,
   },
 }
 
@@ -74,7 +74,7 @@ export function isComplianceGroupId(value: unknown): value is ComplianceGroupId 
 /**
  * Compliance group a visitor from `country` is routed to under `regime`. `country` is whatever the
  * geo provider returned — `''` (or anything unrecognisable) means the location is unknown.
- * Throws {@link RegimeNotImplementedError} for `strictest_global`.
+ * `strictest_global` sends everyone to the DPDP flow; see {@link regimeHardening} for what it adds.
  */
 export function resolveRegimeGroup(
   regime: RegimeId,
@@ -91,6 +91,52 @@ export function resolveRegimeGroup(
       return defaultGroup
     }
     case 'strictest_global':
-      throw new RegimeNotImplementedError(regime)
+      return DPDP_GROUP
+  }
+}
+
+/** Consent lifetime cap under `strictest_global`. TODO(legal): Q-R5 — confirm the period. */
+export const STRICTEST_MAX_EXPIRY_DAYS = 365
+
+/** Item purposes the Global Privacy Control signal switches off under `strictest_global`. */
+export const STRICTEST_GPC_ITEM_PURPOSES: readonly string[] = ['marketing']
+
+/**
+ * What a regime adds on top of its compliance group's profile. Only `strictest_global` adds
+ * anything: the DPDP flow already gives itemised, unbundled, nothing-pre-ticked consent with an
+ * equal "Reject all", withdrawal control and no legitimate-interest basis; from the GDPR side it
+ * adds honouring GPC (treated as a refusal of advertising) and a capped consent lifetime.
+ * TODO(legal): Q-R5 — whether this is the full union of both laws' consent requirements.
+ */
+export interface RegimeHardening {
+  gpcMode: 'honor'
+  gpcItemPurposes: readonly string[]
+  maxExpiryDays: number
+}
+
+export function regimeHardening(regime: unknown): RegimeHardening | null {
+  return regime === 'strictest_global'
+    ? { gpcMode: 'honor', gpcItemPurposes: STRICTEST_GPC_ITEM_PURPOSES, maxExpiryDays: STRICTEST_MAX_EXPIRY_DAYS }
+    : null
+}
+
+interface HardenableProfile {
+  gpcMode?: 'ignore' | 'honor' | 'strict'
+  expiryDays?: number
+  cookies: Record<string, { purpose?: string; listenGpc?: boolean }>
+}
+
+/** `profile` with the hardening applied: GPC honoured (never loosened from `strict`), the listed
+ * item purposes listening to GPC, and `expiryDays` capped. */
+export function hardenProfile<P extends HardenableProfile>(profile: P, h: RegimeHardening): P {
+  const cookies: P['cookies'] = { ...profile.cookies }
+  for (const [id, c] of Object.entries(cookies)) {
+    if (h.gpcItemPurposes.includes(c.purpose ?? '')) (cookies as Record<string, unknown>)[id] = { ...c, listenGpc: true }
+  }
+  return {
+    ...profile,
+    cookies,
+    gpcMode: profile.gpcMode === 'strict' ? 'strict' : h.gpcMode,
+    expiryDays: Math.min(profile.expiryDays ?? h.maxExpiryDays, h.maxExpiryDays),
   }
 }

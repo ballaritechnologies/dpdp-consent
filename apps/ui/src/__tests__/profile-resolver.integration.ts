@@ -248,6 +248,31 @@ describe('resolveProfile — Scenario 2A', () => {
     assert.equal(Object.keys(resolved.cookies).length, 2)
   })
 
+  test('strictest_global: applies the server hardening, also on a cache hit; ignores a malformed one', async () => {
+    const publicProfile = makePublicProfile({
+      gpcMode: 'ignore', expiryDays: 730, complianceGroup: 'opt-in-dpdpa',
+      cookies: { necessary: {}, analytics: { purpose: 'analytics' }, ads: { purpose: 'marketing' } },
+    } as Partial<PublicProfileResponse>)
+    const resolveResponse = {
+      path: '/profiles/acme/opt-in-dpdpa/en', complianceGroup: 'opt-in-dpdpa', locale: 'en', found: true,
+      hardening: { gpcMode: 'honor', gpcItemPurposes: ['marketing'], maxExpiryDays: 365 },
+    }
+    stubFetch({ ok: true, body: resolveResponse }, { ok: true, body: publicProfile }, { ok: true, body: publicProfile })
+    for (let i = 0; i < 2; i++) {
+      const resolved = await resolveProfile(makeConfig())
+      assert.equal(resolved.gpcMode, 'honor', `call ${i}`)
+      assert.equal(resolved.expiryDays, 365, `call ${i}`)
+      assert.equal(resolved.cookies['ads']?.listenGpc, true, `call ${i}`)
+      assert.notEqual(resolved.cookies['analytics']?.listenGpc, true, `call ${i}`)
+    }
+
+    clearStorage()
+    stubFetch({ ok: true, body: { ...resolveResponse, hardening: { gpcMode: 'ignore', maxExpiryDays: -1 } } }, { ok: true, body: publicProfile })
+    const unhardened = await resolveProfile(makeConfig())
+    assert.equal(unhardened.gpcMode, 'ignore')
+    assert.equal(unhardened.expiryDays, 730)
+  })
+
   test('caches /resolve-profile URL in sessionStorage for subsequent calls', async () => {
     const publicProfile = makePublicProfile()
     const resolveResponse = {

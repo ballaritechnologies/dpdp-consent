@@ -7,8 +7,7 @@ import { Select } from './Select'
 
 const NONE = ''
 
-/** Per-site consent regime (`TenantSettings.regime`). `strictest_global` is not offered until the
- * API accepts it. */
+/** Per-site consent regime (`TenantSettings.regime`). */
 export function RegimeSettings() {
   const t = useT()
   const [tenants, setTenants] = useState<Tenant[]>([])
@@ -58,6 +57,7 @@ export function RegimeSettings() {
     { value: NONE, label: t('settings.regime.none') },
     { value: 'dpdp', label: t('settings.regime.dpdp') },
     { value: 'dpdp_gdpr', label: t('settings.regime.dpdpGdpr') },
+    { value: 'strictest_global', label: t('settings.regime.strictest') },
   ]
   const groupOptions = COMPLIANCE_GROUP_IDS.map(id => ({ value: id, label: COMPLIANCE_GROUPS[id].label }))
   const tenantOptions = tenants.map(tn => ({ value: tn.id, label: tn.name }))
@@ -86,6 +86,7 @@ export function RegimeSettings() {
           />
           {regime === 'dpdp' && <p class="text-xs text-gray-500 mt-1">{t('settings.regime.dpdpHint')}</p>}
           {regime === 'dpdp_gdpr' && <p class="text-xs text-gray-500 mt-1">{t('settings.regime.dpdpGdprHint')}</p>}
+          {regime === 'strictest_global' && <p class="text-xs text-gray-500 mt-1">{t('settings.regime.strictestHint')}</p>}
         </div>
 
         {regime === 'dpdp_gdpr' && (
@@ -101,7 +102,6 @@ export function RegimeSettings() {
           </div>
         )}
 
-        <p class="text-xs text-gray-400">{t('settings.regime.strictestSoon')}</p>
         <p class="text-xs text-amber-700">{t('settings.regime.notLegalAdvice')}</p>
 
         <div class="flex items-center gap-3">

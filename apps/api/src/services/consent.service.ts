@@ -4,7 +4,7 @@ import type {
 } from '@consenti/types'
 import type { RecordProfileRef } from '../core/consent-engine'
 import { buildConsentValue, verifyConsent, validateConsentInput, buildTcfPayload, buildConsentSignaturePayload } from '../core/consent-engine'
-import { buildCookieCategoryIndex, encodeTcString, restrictConsentForMinor } from '@consenti/utils'
+import { buildCookieCategoryIndex, encodeTcString, restrictConsentForMinor, isMandatoryCookie, regimeHardening } from '@consenti/utils'
 import { getGvl } from '../tcf/gvl-cache'
 import { encodeRealTcString } from '../tcf/real-tc-string'
 import { isRegistrationConfirmed } from '../tcf/registration-confirmation'
@@ -37,6 +37,25 @@ export class ConsentService {
     private receipts?: ReceiptWriter,
     private minors?: { isParentVerified(tenantId: string, visitorId: string): Promise<boolean> },
   ) { }
+
+  /**
+   * `strictest_global` honours the Global Privacy Control signal even on the DPDP flow: with GPC,
+   * advertising items (and any item set to listen to GPC) are refused, on every write.
+   */
+  private async applyRegimeGpc(
+    consent: ConsentDbRecord['consentJson'], gpc: boolean, cookies: CookieMap, categories: CategoryMap,
+  ): Promise<ConsentDbRecord['consentJson']> {
+    if (!gpc || !this.storage || this.compliance?.gpc === false) return consent
+    const hardening = regimeHardening((await this.storage.getSettings(this.tenantId)).regime)
+    if (!hardening) return consent
+    const index = buildCookieCategoryIndex(categories)
+    const out = { ...consent }
+    for (const [id, cookie] of Object.entries(cookies)) {
+      if (isMandatoryCookie(id, index)) continue
+      if (cookie.listenGpc || hardening.gpcItemPurposes.includes(cookie.purpose ?? '')) out[id] = 'denied'
+    }
+    return out
+  }
 
   /**
    * A child (a visitor who answered the age gate as under age): no optional purpose until a
@@ -134,6 +153,8 @@ export class ConsentService {
       input.gpcDetected,
       regulation,
     )
+
+    builtConsent = await this.applyRegimeGpc(builtConsent, input.gpcDetected, profileCookies, categories)
 
     const existing = await this.consents.get(input.visitorId)
     const isMinor = (input.ageVerified ?? existing?.ageVerified) === false
@@ -313,6 +334,7 @@ export class ConsentService {
       effectiveGpc,
       regulation,
     )
+    builtConsent = await this.applyRegimeGpc(builtConsent, effectiveGpc, profileCookies2, categories2)
     const isMinor = existing.ageVerified === false
     let parentVerified = false
     if (isMinor) {

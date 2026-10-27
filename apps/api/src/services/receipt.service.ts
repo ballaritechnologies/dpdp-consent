@@ -17,6 +17,10 @@ export interface ReceiptEvent {
   previous?: ConsentDbRecord | null
   expiredPurposes?: string[]
   minor?: ConsentReceiptData['minor']
+  /** Overrides for decisions that don't come from a consent record (e.g. a Consent Manager). */
+  consent?: Record<string, string>
+  source?: string
+  noticeVersion?: string
 }
 
 /** The part of ReceiptService that ConsentService depends on. */
@@ -43,7 +47,7 @@ export class ReceiptService implements ReceiptWriter {
 
   async record(e: ReceiptEvent): Promise<ServerConsentReceipt> {
     const now = new Date().toISOString()
-    const consent = { ...(e.record?.consentJson ?? {}) }
+    const consent = { ...(e.consent ?? e.record?.consentJson ?? {}) }
     const purposes = purposeStates(e.categories, consent)
     let action = e.action
     if (action === 'updated' && e.previous && hadOptionalGrant(e.previous.consentJson, e.categories) && !hadOptionalGrant(consent, e.categories)) {
@@ -56,11 +60,11 @@ export class ReceiptService implements ReceiptWriter {
       consentRecordId: e.record?.id ?? e.previous?.id ?? null,
       profileId: e.record?.profileId ?? e.previous?.profileId ?? e.profile?.id ?? null,
       profileVersion: e.record?.profileVersion ?? e.previous?.profileVersion ?? e.profile?.version ?? null,
-      noticeVersion: pj?.dpdpa?.noticeVersion ?? null,
+      noticeVersion: e.noticeVersion ?? pj?.dpdpa?.noticeVersion ?? null,
       complianceGroup: pj?.complianceGroup ?? null,
       regulation: pj?.regulation ?? null,
       locale: e.record?.locale ?? e.previous?.locale ?? null,
-      source: e.record?.source ?? null,
+      source: e.source ?? e.record?.source ?? null,
       gpcDetected: e.record?.gpcDetected ?? false,
       purposes,
       consent,

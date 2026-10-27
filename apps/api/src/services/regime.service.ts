@@ -1,5 +1,5 @@
 import type { TenantSettings } from '@consenti/types'
-import { isComplianceGroupId, isRegimeId, resolveRegimeGroup } from '@consenti/utils'
+import { isComplianceGroupId, isRegimeId, resolveRegimeGroup, regimeHardening, type RegimeHardening } from '@consenti/utils'
 import type { ResolvedGeo } from './geo-resolver.service'
 
 /**
@@ -10,7 +10,6 @@ import type { ResolvedGeo } from './geo-resolver.service'
 export class RegimeService {
   constructor(private readonly getSettings: (tenantId: string) => Promise<TenantSettings>) {}
 
-  /** Throws `RegimeNotImplementedError` for `strictest_global`. */
   async apply(tenantId: string, geo: ResolvedGeo): Promise<ResolvedGeo> {
     const { regime, regimeDefaultGroup } = await this.getSettings(tenantId)
     if (!isRegimeId(regime)) return geo
@@ -26,5 +25,10 @@ export class RegimeService {
     // regime routes the visitor elsewhere it no longer applies.
     const { requiresSensitiveOptIn: _dropped, ...rest } = geo
     return { ...rest, complianceGroup }
+  }
+
+  /** What the tenant's regime adds on top of the profile (`strictest_global` only), or `null`. */
+  async hardening(tenantId: string): Promise<RegimeHardening | null> {
+    return regimeHardening((await this.getSettings(tenantId)).regime)
   }
 }

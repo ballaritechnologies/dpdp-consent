@@ -219,7 +219,7 @@ interface DocCursor extends AsyncIterable<object> {
 }
 interface DocCollection {
   insertOne(doc: object): Promise<object>
-  findOne(filter: object): Promise<object | null>
+  findOne(filter: object, options?: { sort?: object }): Promise<object | null>
   findOneAndUpdate(filter: object, update: object, options?: object): Promise<object | null>
   find(filter: object, options?: { projection: object }): DocCursor
   updateOne(filter: object, update: object, options?: object): Promise<object>
@@ -389,12 +389,13 @@ export class MongoDBAdapter implements StorageAdapter {
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
     const now = new Date().toISOString()
     const set: Record<string, unknown> = { updated_at: now, consent_json: data.consentJson }
+    if (data.profileId != null) set['profile_id'] = data.profileId
     if (data.profileVersion != null) set['profile_version'] = data.profileVersion
     if (data.locale != null) set['locale'] = data.locale
     if (data.gpcDetected != null) set['gpc_detected'] = data.gpcDetected
     if (data.signature != null) set['signature'] = data.signature
     const res = cast<DocConsent>(await this.col('consent_records').findOneAndUpdate(
-      { visitor_id: visitorId }, { $set: set }, { returnDocument: 'after' },
+      { _id: existing.id }, { $set: set }, { returnDocument: 'after' },
     ))
     if (!res) throw new Error(`Consent for visitor ${visitorId} not found`)
     await this.writeHistory(res._id, res.tenant_id, visitorId, existing.consentJson, data.consentJson, 'updated', data.profileVersion ?? existing.profileVersion)
@@ -407,7 +408,7 @@ export class MongoDBAdapter implements StorageAdapter {
   }
 
   async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const doc = cast<DocConsent>(await this.col('consent_records').findOne({ visitor_id: visitorId }))
+    const doc = cast<DocConsent>(await this.col('consent_records').findOne({ visitor_id: visitorId }, { sort: { updated_at: -1, _id: -1 } }))
     return doc ? mapConsent(doc) : null
   }
 

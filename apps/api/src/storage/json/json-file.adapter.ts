@@ -296,13 +296,15 @@ export class JsonFileAdapter implements StorageAdapter {
   }
 
   async updateConsent(visitorId: string, data: UpdateConsentInput): Promise<ConsentDbRecord> {
-    const idx = this.db.consents.findIndex(c => c.visitorId === visitorId)
+    const current = await this.getConsent(visitorId)
+    const idx = current ? this.db.consents.findIndex(c => c.id === current.id) : -1
     if (idx === -1) throw new Error(`Consent for visitor ${visitorId} not found`)
     const existing = this.db.consents[idx]!
     const now = new Date().toISOString()
     const updated: ConsentDbRecord = {
       ...existing,
       consentJson: data.consentJson as ConsentValue,
+      ...(data.profileId != null && { profileId: data.profileId }),
       ...(data.profileVersion != null && { profileVersion: data.profileVersion }),
       ...(data.locale != null && { locale: data.locale }),
       ...(data.gpcDetected != null && { gpcDetected: data.gpcDetected }),
@@ -332,7 +334,12 @@ export class JsonFileAdapter implements StorageAdapter {
   }
 
   async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    return this.db.consents.find(c => c.visitorId === visitorId) ?? null
+    // The most recently updated record, should a visitor have more than one (legacy data).
+    let newest: ConsentDbRecord | null = null
+    for (const c of this.db.consents) {
+      if (c.visitorId === visitorId && (!newest || c.updatedAt > newest.updatedAt || (c.updatedAt === newest.updatedAt && c.id > newest.id))) newest = c
+    }
+    return newest
   }
 
   async getConsents(filters: ConsentFilters): Promise<PagedResult<ConsentSummary>> {

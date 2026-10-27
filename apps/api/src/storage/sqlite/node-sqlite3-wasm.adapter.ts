@@ -352,12 +352,13 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     const now = new Date().toISOString()
     const fields: string[] = ['updated_at = ?', 'consent_json = ?']
     const vals: Val[] = [now, JSON.stringify(data.consentJson)]
+    if (data.profileId != null) { fields.push('profile_id = ?'); vals.push(data.profileId) }
     if (data.profileVersion != null) { fields.push('profile_version = ?'); vals.push(data.profileVersion) }
     if (data.locale != null) { fields.push('locale = ?'); vals.push(data.locale) }
     if (data.gpcDetected != null) { fields.push('gpc_detected = ?'); vals.push(data.gpcDetected ? 1 : 0) }
     if (data.signature != null) { fields.push('signature = ?'); vals.push(data.signature) }
-    vals.push(visitorId)
-    this.stmt(`UPDATE consent_records SET ${fields.join(', ')} WHERE visitor_id = ?`).run(vals)
+    vals.push(existing.id)
+    this.stmt(`UPDATE consent_records SET ${fields.join(', ')} WHERE id = ?`).run(vals)
     const histId = randomUUID()
     this.stmt(
       'INSERT INTO consent_history (id,tenant_id,consent_record_id,visitor_id,profile_version,old_json,new_json,action,created_at) VALUES (?,?,?,?,?,?,?,?,?)'
@@ -373,7 +374,7 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
   }
 
   async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const row = this.stmt('SELECT * FROM consent_records WHERE visitor_id = ?').get(visitorId) as RawConsent | null
+    const row = this.stmt('SELECT * FROM consent_records WHERE visitor_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1').get(visitorId) as RawConsent | null
     return row ? this.mapConsent(row) : null
   }
 
@@ -384,7 +385,7 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     if (filters.from) { conditions.push('created_at >= ?'); vals.push(filters.from) }
     if (filters.to) { conditions.push('created_at <= ?'); vals.push(filters.to) }
     if (filters.q) {
-      conditions.push("(visitor_id LIKE ? OR profile_id LIKE ? OR locale LIKE ? OR source LIKE ?) ESCAPE '\\'")
+      conditions.push("(visitor_id LIKE ? ESCAPE '\\' OR profile_id LIKE ? ESCAPE '\\' OR locale LIKE ? ESCAPE '\\' OR source LIKE ? ESCAPE '\\')")
       const like = likePrefix(filters.q)
       vals.push(like, like, like, like)
     }
@@ -500,7 +501,7 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     if (filters.from) { conditions.push('first_seen >= ?'); vals.push(filters.from) }
     if (filters.to) { conditions.push('first_seen <= ?'); vals.push(filters.to) }
     if (filters.q) {
-      conditions.push("(visitor_id LIKE ? OR country LIKE ?) ESCAPE '\\'")
+      conditions.push("(visitor_id LIKE ? ESCAPE '\\' OR country LIKE ? ESCAPE '\\')")
       const like = likePrefix(filters.q)
       vals.push(like, like)
     }
@@ -695,7 +696,7 @@ export class NodeSqlite3WasmAdapter implements StorageAdapter {
     if (filters.from) { conditions.push('created_at >= ?'); vals.push(filters.from) }
     if (filters.to) { conditions.push('created_at <= ?'); vals.push(filters.to) }
     if (filters.q) {
-      conditions.push("(action LIKE ? OR resource_type LIKE ? OR resource_id LIKE ? OR user_id LIKE ?) ESCAPE '\\'")
+      conditions.push("(action LIKE ? ESCAPE '\\' OR resource_type LIKE ? ESCAPE '\\' OR resource_id LIKE ? ESCAPE '\\' OR user_id LIKE ? ESCAPE '\\')")
       const like = likePrefix(filters.q)
       vals.push(like, like, like, like)
     }

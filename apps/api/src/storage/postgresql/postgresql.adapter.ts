@@ -483,13 +483,14 @@ export class PostgreSQLAdapter implements StorageAdapter {
     const sets: string[] = ['consent_json=$1::jsonb', 'updated_at=NOW()']
     const vals: (string | number | boolean | null)[] = [JSON.stringify(data.consentJson)]
     let idx = 2
+    if (data.profileId != null) { sets.push(`profile_id=$${idx++}`); vals.push(data.profileId) }
     if (data.profileVersion != null) { sets.push(`profile_version=$${idx++}`); vals.push(data.profileVersion) }
     if (data.locale != null) { sets.push(`locale=$${idx++}`); vals.push(data.locale) }
     if (data.gpcDetected != null) { sets.push(`gpc_detected=$${idx++}`); vals.push(data.gpcDetected) }
     if (data.signature != null) { sets.push(`signature=$${idx++}`); vals.push(data.signature) }
-    vals.push(visitorId)
+    vals.push(existing.id)
     const rows = await this.q<RowConsent>(
-      `UPDATE consenti_consent_records SET ${sets.join(',')} WHERE visitor_id=$${idx} RETURNING *`,
+      `UPDATE consenti_consent_records SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
       vals,
     )
     const row = rows[0]
@@ -504,7 +505,7 @@ export class PostgreSQLAdapter implements StorageAdapter {
   }
 
   async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=$1', [visitorId])
+    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=$1 ORDER BY updated_at DESC, id DESC LIMIT 1', [visitorId])
     return rows[0] ? mapConsent(rows[0]) : null
   }
 

@@ -284,7 +284,12 @@ export class ConsentService {
       const updateData = await (this.pluginEngine
         ? this.pluginEngine.runBeforeConsentUpdate({ consentJson: builtConsent, locale: input.locale, gpcDetected: input.gpcDetected, ...(signature ? { signature } : {}) })
         : Promise.resolve({ consentJson: builtConsent, locale: input.locale, gpcDetected: input.gpcDetected, ...(signature ? { signature } : {}) }))
-      record = await this.consents.update(input.visitorId, { ...updateData, profileVersion: profile.version })
+      // A decision under another profile (e.g. the visitor moved from the DPDP to the GDPR flow)
+      // moves the record to that profile; the signature above already covers the new profile.
+      record = await this.consents.update(input.visitorId, {
+        ...updateData, profileVersion: profile.version,
+        ...(existing.profileId !== input.profileId ? { profileId: input.profileId } : {}),
+      })
     } else {
       record = await this.consents.create(baseInput)
     }

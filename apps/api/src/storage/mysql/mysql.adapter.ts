@@ -474,13 +474,14 @@ export class MySQLAdapter implements StorageAdapter {
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
     const sets: string[] = ['consent_json=?']
     const vals: (string | number | boolean | null)[] = [JSON.stringify(data.consentJson)]
+    if (data.profileId != null) { sets.push('profile_id=?'); vals.push(data.profileId) }
     if (data.profileVersion != null) { sets.push('profile_version=?'); vals.push(data.profileVersion) }
     if (data.locale != null) { sets.push('locale=?'); vals.push(data.locale) }
     if (data.gpcDetected != null) { sets.push('gpc_detected=?'); vals.push(data.gpcDetected ? 1 : 0) }
     if (data.signature != null) { sets.push('signature=?'); vals.push(data.signature) }
-    vals.push(visitorId)
-    await this.exec(`UPDATE consenti_consent_records SET ${sets.join(',')} WHERE visitor_id=?`, vals)
-    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=?', [visitorId])
+    vals.push(existing.id)
+    await this.exec(`UPDATE consenti_consent_records SET ${sets.join(',')} WHERE id=?`, vals)
+    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE id=?', [existing.id])
     const row = rows[0]
     if (!row) throw new Error(`Consent for visitor ${visitorId} not found`)
     await this.writeHistory(row.id, row.tenant_id, visitorId, existing.consentJson, data.consentJson, 'updated', data.profileVersion ?? existing.profileVersion ?? null)
@@ -493,7 +494,7 @@ export class MySQLAdapter implements StorageAdapter {
   }
 
   async getConsent(visitorId: string): Promise<ConsentDbRecord | null> {
-    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=?', [visitorId])
+    const rows = await this.q<RowConsent>('SELECT * FROM consenti_consent_records WHERE visitor_id=? ORDER BY updated_at DESC, id DESC LIMIT 1', [visitorId])
     return rows[0] ? mapConsent(rows[0]) : null
   }
 

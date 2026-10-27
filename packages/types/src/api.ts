@@ -720,6 +720,8 @@ export interface CreateConsentInput {
 
 export interface UpdateConsentInput {
   consentJson: ConsentValue
+  /** Moves the record to another profile (the visitor decided again under a different flow). */
+  profileId?: string
   profileVersion?: number
   locale?: string
   gpcDetected?: boolean

@@ -22,6 +22,7 @@
     "layout.expandSidebar": "サイドバーを展開",
     "layout.collapseSidebar": "サイドバーを折りたたむ",
     "layout.signOut": "サインアウト",
+    "layout.site": "サイト",
     "layout.toggleDark": "ダークモードに切り替え",
     "layout.toggleLight": "ライトモードに切り替え",
     "layout.poweredBy": "提供元",

@@ -4,7 +4,8 @@ import type {
 } from '@consenti/types'
 import { withErrorHandler } from '../../middleware/error.middleware'
 import { errorResponse } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
+import { forTenant, type PerTenant } from '../../services/tenant-services'
 import { getQueryParam } from '../../utils/http'
 import type { ProfileService } from '../../services/profile.service'
 
@@ -34,25 +35,21 @@ export function buildAdminExportRoutes(
   storage: StorageAdapter,
   authConfig: AuthConfig,
   secret: string,
-  profileService: ProfileService,
+  profileServiceIn: PerTenant<ProfileService>,
 ) {
-  async function auth(req: Request) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { denied: authError(user, 'export:run') }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
   return {
     'GET /export/consents': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req)
-        if (denied) return denied
+        const g = await guard(req, 'export:run'); if (g instanceof Response) return g
         const url = new URL(req.url)
         const format = getQueryParam(url, 'format') ?? 'csv'
         const profileId = getQueryParam(url, 'profileId')
         const from = getQueryParam(url, 'from')
         const to = getQueryParam(url, 'to')
         const filters: ConsentFilters = {
-          tenantId: 'default',
+          tenantId: g.tenantId,
           ...(profileId !== undefined ? { profileId } : {}),
           ...(from !== undefined ? { from } : {}),
           ...(to !== undefined ? { to } : {}),
@@ -92,8 +89,7 @@ export function buildAdminExportRoutes(
 
     'GET /export/consents/xlsx': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req)
-        if (denied) return denied
+        const g = await guard(req, 'export:run'); if (g instanceof Response) return g
 
         interface XlsxModule {
           utils: {
@@ -120,7 +116,7 @@ export function buildAdminExportRoutes(
         const from = url.searchParams.get('from') ?? undefined
         const to = url.searchParams.get('to') ?? undefined
         const filters: ConsentFilters = {
-          tenantId: 'default',
+          tenantId: g.tenantId,
           ...(profileId !== undefined ? { profileId } : {}),
           ...(from !== undefined ? { from } : {}),
           ...(to !== undefined ? { to } : {}),
@@ -160,11 +156,11 @@ export function buildAdminExportRoutes(
 
     'GET /export/translations/:profileId': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req)
-        if (denied) return denied
+        const g = await guard(req, 'export:run'); if (g instanceof Response) return g
         const profileId = p['profileId'] ?? ''
         const profile = await storage.getProfile(profileId)
-        if (!profile) return errorResponse(404, 'Profile not found')
+        if (!profile || profile.tenantId !== g.tenantId) return errorResponse(404, 'Profile not found')
+        const profileService = forTenant(profileServiceIn, g.tenantId)
 
         const pj = profile.profileJson
         const locales = pj.locales?.length ? pj.locales : [profile.defaultLocale]
@@ -218,14 +214,13 @@ export function buildAdminExportRoutes(
 
     'GET /export/audit': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req)
-        if (denied) return denied
+        const g = await guard(req, 'export:run'); if (g instanceof Response) return g
         const url = new URL(req.url)
         const format = getQueryParam(url, 'format') ?? 'csv'
         const from = getQueryParam(url, 'from')
         const to = getQueryParam(url, 'to')
         const filters: AuditFilters = {
-          tenantId: 'default',
+          tenantId: g.tenantId,
           ...(from !== undefined ? { from } : {}),
           ...(to !== undefined ? { to } : {}),
         }

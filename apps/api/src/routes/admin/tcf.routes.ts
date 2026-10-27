@@ -4,7 +4,7 @@ import { getCmpList } from '../../tcf/cmp-list-cache'
 import { hashRegistrationFields, isRegistrationConfirmed } from '../../tcf/registration-confirmation'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { authenticate, authError, serverWideOnly } from '../../middleware/auth.middleware'
 
 export function buildAdminTcfRoutes(
   storage: StorageAdapter,
@@ -21,7 +21,7 @@ export function buildAdminTcfRoutes(
    * no separate `settings:view`, so read and write share it (see settings.routes.ts). */
   async function settingsAuth(req: Request) {
     const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, 'settings:update') }
+    return { user, denied: authError(user, 'settings:update') ?? serverWideOnly(user) }
   }
 
   return {

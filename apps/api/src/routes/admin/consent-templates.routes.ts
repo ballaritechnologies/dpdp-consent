@@ -1,42 +1,43 @@
 import type { StorageAdapter, AuthConfig, CookieMap, CategoryMap } from '@consenti/types'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
 import { validateProfileCompliance } from '../../services/compliance-validator.service'
 import { validateConsentTemplate } from '../../validators/consent-template.validator'
 
-export function buildAdminConsentTemplateRoutes(storage: StorageAdapter, authConfig: AuthConfig, secret: string, tenantId = 'default') {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
+export function buildAdminConsentTemplateRoutes(storage: StorageAdapter, authConfig: AuthConfig, secret: string) {
+  const guard = tenantGuard(storage, authConfig, secret)
+
+  /** The template, if it belongs to this site. */
+  async function own(id: string | undefined, tenantId: string) {
+    const t = await storage.getConsentTemplate(id ?? '')
+    return t && t.tenantId === tenantId ? t : null
   }
 
   return {
     'GET /consent-templates': async (req: Request): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
-        return json(200, await storage.getConsentTemplates(tenantId))
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        return json(200, await storage.getConsentTemplates(g.tenantId))
       }),
 
     'GET /consent-templates/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'Consent template not found')
         const t = await storage.getConsentTemplate(params['id']!)
         return t ? json(200, t) : errorResponse(404, 'Consent template not found')
       }),
 
     'POST /consent-templates': async (req: Request): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:create')
-        if (denied) return denied
+        const g = await guard(req, 'profile:create'); if (g instanceof Response) return g
         const body = await parseJsonBody<{ name?: unknown; cookies?: unknown; categories?: unknown }>(req)
         if (!body?.name || typeof body.name !== 'string') return errorResponse(400, 'name is required')
         const templateResult = validateConsentTemplate(body.cookies, body.categories)
         if (!templateResult.valid) return errorResponse(400, templateResult.error!)
         const t = await storage.createConsentTemplate({
-          tenantId,
+          tenantId: g.tenantId,
           name: body.name,
           cookies: body.cookies as CookieMap,
           categories: body.categories as CategoryMap,
@@ -46,8 +47,8 @@ export function buildAdminConsentTemplateRoutes(storage: StorageAdapter, authCon
 
     'PUT /consent-templates/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:update')
-        if (denied) return denied
+        const g = await guard(req, 'profile:update'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'Consent template not found')
         const id = params['id']!
         const body = await parseJsonBody<{ name?: unknown; cookies?: unknown; categories?: unknown }>(req)
 
@@ -87,8 +88,8 @@ export function buildAdminConsentTemplateRoutes(storage: StorageAdapter, authCon
 
     'DELETE /consent-templates/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:delete')
-        if (denied) return denied
+        const g = await guard(req, 'profile:delete'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'Consent template not found')
         const id = params['id']!
         const profiles = await storage.findProfilesUsingConsentTemplate(id)
         if (profiles.length > 0) {
@@ -102,8 +103,8 @@ export function buildAdminConsentTemplateRoutes(storage: StorageAdapter, authCon
 
     'POST /consent-templates/:id/copy': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:create')
-        if (denied) return denied
+        const g = await guard(req, 'profile:create'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'Consent template not found')
         const body = await parseJsonBody<{ name?: unknown }>(req)
         const src = await storage.getConsentTemplate(params['id']!)
         if (!src) return errorResponse(404, 'Consent template not found')
@@ -114,8 +115,8 @@ export function buildAdminConsentTemplateRoutes(storage: StorageAdapter, authCon
 
     'GET /consent-templates/:id/profile-usage': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'Consent template not found')
         const usage = await storage.findProfilesUsingConsentTemplate(params['id']!)
         return json(200, usage)
       }),

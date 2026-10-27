@@ -86,3 +86,22 @@ export function authError(
   if (permission && !user.permissions.includes(permission)) return errorResponse(403, 'Forbidden')
   return null
 }
+
+/**
+ * Denies users limited to some sites. Users, roles and the list of sites are shared by every
+ * site, so changing them (or, for users, reading them) is only for users of every site;
+ * otherwise a site-limited admin could grant themselves or others access to more sites.
+ */
+export function allSitesOnly(user: AuthenticatedUser | null): Response | null {
+  if (user && user.allowedTenants.length > 0) return errorResponse(403, 'Only administrators of all sites can do this')
+  return null
+}
+
+/** For server-wide settings (TCF/GPP registration, kept on the default site): only users who may
+ * use the default site can change them; a user limited to other sites gets 403. */
+export function serverWideOnly(user: AuthenticatedUser | null): Response | null {
+  if (user && user.allowedTenants.length > 0 && !user.allowedTenants.includes('default')) {
+    return errorResponse(403, 'This is a server-wide setting')
+  }
+  return null
+}

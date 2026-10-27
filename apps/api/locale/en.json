@@ -22,6 +22,7 @@
     "layout.expandSidebar": "Expand sidebar",
     "layout.collapseSidebar": "Collapse sidebar",
     "layout.signOut": "Sign out",
+    "layout.site": "Site",
     "layout.toggleDark": "Switch to dark mode",
     "layout.toggleLight": "Switch to light mode",
     "layout.poweredBy": "Powered by",

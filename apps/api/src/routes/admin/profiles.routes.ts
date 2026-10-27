@@ -2,7 +2,8 @@ import type { StorageAdapter, AuthConfig, CookieMap, CategoryMap, MainBanner, Gp
 import { COMPLIANCE_GROUPS } from '@consenti/utils'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
+import { forTenant, type PerTenant } from '../../services/tenant-services'
 import { validateCreateProfile, validateUpdateProfile, castCreateProfile, castUpdateProfile } from '../../validators/profile.validator'
 import type { ProfileService } from '../../services/profile.service'
 import { validateProfileCompliance } from '../../services/compliance-validator.service'
@@ -27,27 +28,32 @@ function collectLocaleContents(
 }
 
 export function buildAdminProfileRoutes(
-  service: ProfileService,
+  serviceIn: PerTenant<ProfileService>,
   storage: StorageAdapter,
   authConfig: AuthConfig,
   secret: string,
 ) {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
-  function tenantAllowed(user: { allowedTenants: string[] } | null, tenantId: string): boolean {
-    if (!user) return false
-    return user.allowedTenants.length === 0 || user.allowedTenants.includes(tenantId)
+  /** A profile may only use its own site's consent and UI templates. */
+  async function foreignTemplate(profileJson: unknown, tenantId: string): Promise<string | null> {
+    const pj = (profileJson ?? {}) as { consentTemplateId?: unknown; uiTemplateId?: unknown }
+    if (typeof pj.consentTemplateId === 'string') {
+      const t = await storage.getConsentTemplate(pj.consentTemplateId)
+      if (!t || t.tenantId !== tenantId) return 'profileJson.consentTemplateId is not a consent template of this site'
+    }
+    if (typeof pj.uiTemplateId === 'string') {
+      const t = await storage.getUITemplate(pj.uiTemplateId)
+      if (!t || t.tenantId !== tenantId) return 'profileJson.uiTemplateId is not a UI template of this site'
+    }
+    return null
   }
 
   return {
     'GET /profiles': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:view')
-        if (denied) return denied
-        if (!tenantAllowed(user, 'default')) return json(200, [])
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         const url = new URL(req.url)
         if (url.searchParams.get('summary') === '1') {
           return json(200, await service.listSummary())
@@ -60,15 +66,15 @@ export function buildAdminProfileRoutes(
     // registration order and :id's pattern would otherwise swallow this literal path first.
     'GET /profiles/archived': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         return json(200, await service.listArchivedProfiles())
       }),
 
     'GET /profiles/:id': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         const profile = await service.get(p['id'] ?? '')
         if (!profile) return errorResponse(404, 'Profile not found')
         return json(200, profile)
@@ -77,8 +83,8 @@ export function buildAdminProfileRoutes(
     // Standalone compliance validation — used by dashboard wizard at step 2
     'POST /profiles/validate': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         const body = await parseJsonBody(req) as { complianceGroup?: string; cookies?: CookieMap; categories?: CategoryMap }
         if (!body.complianceGroup || !body.cookies || typeof body.cookies !== 'object' || !body.categories || typeof body.categories !== 'object') {
           return errorResponse(400, 'complianceGroup, cookies, and categories are required')
@@ -89,8 +95,8 @@ export function buildAdminProfileRoutes(
     // Returns active profile per compliance group for the coverage panel
     'GET /compliance-coverage': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         const groups: Record<string, {
           label: string
           compliances: readonly string[]
@@ -109,12 +115,15 @@ export function buildAdminProfileRoutes(
 
     'POST /profiles': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:create')
-        if (denied) return denied
+        const g = await guard(req, 'profile:create'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
+        const user = g.user
         const body = await parseJsonBody(req) as Record<string, unknown>
         const validation = validateCreateProfile(body)
         if (!validation.valid) return errorResponse(400, validation.error ?? 'Invalid body')
-        const input = castCreateProfile(body, 'default')
+        const input = castCreateProfile(body, g.tenantId)
+        const foreignCreate = await foreignTemplate(body['profileJson'], g.tenantId)
+        if (foreignCreate) return errorResponse(400, foreignCreate)
 
         // Mandatory-content validation (defence in depth — the dashboard wizard already gates on
         // this client-side, but bulk CSV/JSON import bypasses that entirely)
@@ -183,13 +192,16 @@ export function buildAdminProfileRoutes(
 
     'PUT /profiles/:id': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:update')
-        if (denied) return denied
+        const g = await guard(req, 'profile:update'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
+        const user = g.user
         const id = p['id'] ?? ''
         const body = await parseJsonBody(req) as Record<string, unknown>
         const validation = validateUpdateProfile(body)
         if (!validation.valid) return errorResponse(400, validation.error ?? 'Invalid body')
         const input = castUpdateProfile(body)
+        const foreignUpdate = await foreignTemplate(body['profileJson'], g.tenantId)
+        if (foreignUpdate) return errorResponse(400, foreignUpdate)
 
         // Mandatory-content validation — only when this save actually touches content; a
         // partial update (e.g. toggling darkMode) with no profileJson/localeContent has nothing
@@ -260,16 +272,18 @@ export function buildAdminProfileRoutes(
 
     'DELETE /profiles/:id': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:delete')
-        if (denied) return denied
+        const g = await guard(req, 'profile:delete'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
+        const user = g.user
         await service.delete(p['id'] ?? '', user?.sub)
         return json(200, { success: true })
       }),
 
     'POST /profiles/:id/copy': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:create')
-        if (denied) return denied
+        const g = await guard(req, 'profile:create'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
+        const user = g.user
         const id = p['id'] ?? ''
         const existing = await service.get(id)
         if (!existing) return errorResponse(404, 'Profile not found')
@@ -281,8 +295,9 @@ export function buildAdminProfileRoutes(
 
     'POST /profiles/:id/activate': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:update')
-        if (denied) return denied
+        const g = await guard(req, 'profile:update'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
+        const user = g.user
         const id = p['id'] ?? ''
         const body = await parseJsonBody(req) as Record<string, unknown> | null
         const choice = typeof body?.['choice'] === 'string' ? body['choice'] : undefined
@@ -310,23 +325,24 @@ export function buildAdminProfileRoutes(
 
     'POST /profiles/:id/deactivate': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'profile:update')
-        if (denied) return denied
+        const g = await guard(req, 'profile:update'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
+        const user = g.user
         const profile = await service.deactivate(p['id'] ?? '', user?.sub)
         return json(200, profile)
       }),
 
     'GET /profiles/:id/versions': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         return json(200, await service.listVersions(p['id'] ?? ''))
       }),
 
     'GET /profiles/:id/versions/:entryId': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        const service = forTenant(serviceIn, g.tenantId)
         const url = new URL(req.url)
         const locale = url.searchParams.get('locale') ?? 'default'
         const entryId = p['entryId'] ?? ''

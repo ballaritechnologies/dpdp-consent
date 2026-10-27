@@ -1,27 +1,22 @@
 import type { StorageAdapter, AuthConfig, OptInFilters } from '@consenti/types'
 import { json } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
 
 export function buildAdminAnalyticsRoutes(
   storage: StorageAdapter,
   authConfig: AuthConfig,
   secret: string,
-  defaultTenantId = 'default',
 ) {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
   return {
     'GET /analytics/opt-in': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'stats:view')
-        if (denied) return denied
+        const g = await guard(req, 'stats:view'); if (g instanceof Response) return g
 
         const url = new URL(req.url)
-        const tenantId = url.searchParams.get('tenantId') ?? defaultTenantId
+        const tenantId = g.tenantId
 
         const filters: OptInFilters = {}
         const profileId = url.searchParams.get('profileId')

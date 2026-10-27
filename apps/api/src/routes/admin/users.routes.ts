@@ -1,7 +1,7 @@
 import type { StorageAdapter, AuthConfig } from '@consenti/types'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { allSitesOnly, authenticate, authError } from '../../middleware/auth.middleware'
 import type { UserService } from '../../services/user.service'
 
 /** The seeded "full system access" role (see `SEED_ROLES` in seed-data.ts). Any user holding
@@ -17,7 +17,8 @@ export function buildAdminUserRoutes(
 ) {
   async function auth(req: Request, perm?: string) {
     const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
+    // Users are shared by every site: only users of every site may list or manage them.
+    return { user, denied: authError(user, perm) ?? allSitesOnly(user) }
   }
 
   async function isSuperAdmin(userId: string): Promise<boolean> {

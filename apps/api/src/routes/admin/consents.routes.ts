@@ -1,24 +1,19 @@
 import type { StorageAdapter, AuthConfig, ConsentFilters } from '@consenti/types'
 import { json, getQueryParam, getPagination } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
 
 export function buildAdminConsentRoutes(
   storage: StorageAdapter,
   authConfig: AuthConfig,
   secret: string,
 ) {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
   return {
     'GET /consents': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'consent:view')
-        if (denied) return denied
-        if (user?.allowedTenants.length && !user.allowedTenants.includes('default')) return json(200, { items: [], total: 0, page: 1, limit: 50 })
+        const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
         const url = new URL(req.url)
         const profileId = getQueryParam(url, 'profileId')
         const from = getQueryParam(url, 'from')
@@ -28,7 +23,7 @@ export function buildAdminConsentRoutes(
         if ('error' in pagination) return errorResponse(400, pagination.error)
         const { page, limit } = pagination
         const filters: ConsentFilters = {
-          tenantId: 'default',
+          tenantId: g.tenantId,
           page,
           limit,
           ...(profileId !== undefined ? { profileId } : {}),
@@ -42,20 +37,16 @@ export function buildAdminConsentRoutes(
 
     'GET /consents/:visitorId': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'consent:view')
-        if (denied) return denied
-        if (user?.allowedTenants.length && !user.allowedTenants.includes('default')) return errorResponse(403, 'Forbidden')
+        const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
         const record = await storage.getConsent(p['visitorId'] ?? '')
-        if (!record) return errorResponse(404, 'Consent not found')
+        if (!record || record.tenantId !== g.tenantId) return errorResponse(404, 'Consent not found')
         return json(200, record)
       }),
 
     'GET /consents/:visitorId/history': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'consent:view')
-        if (denied) return denied
-        if (user?.allowedTenants.length && !user.allowedTenants.includes('default')) return errorResponse(403, 'Forbidden')
-        const history = await storage.getConsentHistory(p['visitorId'] ?? '')
+        const g = await guard(req, 'consent:view'); if (g instanceof Response) return g
+        const history = (await storage.getConsentHistory(p['visitorId'] ?? '')).filter(h => h.tenantId === g.tenantId)
         return json(200, history)
       }),
   }

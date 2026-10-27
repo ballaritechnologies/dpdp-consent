@@ -1,39 +1,40 @@
 import type { StorageAdapter, AuthConfig } from '@consenti/types'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
 
-export function buildAdminUITemplateRoutes(storage: StorageAdapter, authConfig: AuthConfig, secret: string, tenantId = 'default') {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
+export function buildAdminUITemplateRoutes(storage: StorageAdapter, authConfig: AuthConfig, secret: string) {
+  const guard = tenantGuard(storage, authConfig, secret)
+
+  /** The template, if it belongs to this site. */
+  async function own(id: string | undefined, tenantId: string) {
+    const t = await storage.getUITemplate(id ?? '')
+    return t && t.tenantId === tenantId ? t : null
   }
 
   return {
     'GET /ui-templates': async (req: Request): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
-        return json(200, await storage.getUITemplates(tenantId))
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        return json(200, await storage.getUITemplates(g.tenantId))
       }),
 
     'GET /ui-templates/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'UI template not found')
         const t = await storage.getUITemplate(params['id']!)
         return t ? json(200, t) : errorResponse(404, 'UI template not found')
       }),
 
     'POST /ui-templates': async (req: Request): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:create')
-        if (denied) return denied
+        const g = await guard(req, 'profile:create'); if (g instanceof Response) return g
         const body = await parseJsonBody<Record<string, unknown>>(req)
         if (!body?.name || typeof body.name !== 'string') return errorResponse(400, 'name is required')
         if (!body.mainBanner || !body.gpcBanner || !body.preferenceModal) return errorResponse(400, 'mainBanner, gpcBanner, and preferenceModal are required')
         const t = await storage.createUITemplate({
-          tenantId,
+          tenantId: g.tenantId,
           name: body.name,
           mainBanner: body.mainBanner as never,
           gpcBanner: body.gpcBanner as never,
@@ -44,8 +45,8 @@ export function buildAdminUITemplateRoutes(storage: StorageAdapter, authConfig: 
 
     'PUT /ui-templates/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:update')
-        if (denied) return denied
+        const g = await guard(req, 'profile:update'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'UI template not found')
         const body = await parseJsonBody<Record<string, unknown>>(req)
         const update: Record<string, unknown> = {}
         if (typeof body?.name === 'string') update['name'] = body.name
@@ -58,8 +59,8 @@ export function buildAdminUITemplateRoutes(storage: StorageAdapter, authConfig: 
 
     'DELETE /ui-templates/:id': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:delete')
-        if (denied) return denied
+        const g = await guard(req, 'profile:delete'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'UI template not found')
         const id = params['id']!
         const profiles = await storage.findProfilesUsingUITemplate(id)
         if (profiles.length > 0) {
@@ -73,8 +74,8 @@ export function buildAdminUITemplateRoutes(storage: StorageAdapter, authConfig: 
 
     'POST /ui-templates/:id/copy': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:create')
-        if (denied) return denied
+        const g = await guard(req, 'profile:create'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'UI template not found')
         const body = await parseJsonBody<{ name?: unknown }>(req)
         const src = await storage.getUITemplate(params['id']!)
         if (!src) return errorResponse(404, 'UI template not found')
@@ -85,8 +86,8 @@ export function buildAdminUITemplateRoutes(storage: StorageAdapter, authConfig: 
 
     'GET /ui-templates/:id/profile-usage': async (req: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { denied } = await auth(req, 'profile:view')
-        if (denied) return denied
+        const g = await guard(req, 'profile:view'); if (g instanceof Response) return g
+        if (!(await own(params['id'], g.tenantId))) return errorResponse(404, 'UI template not found')
         const usage = await storage.findProfilesUsingUITemplate(params['id']!)
         return json(200, usage)
       }),

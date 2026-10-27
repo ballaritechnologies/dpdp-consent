@@ -10,6 +10,27 @@ function getToken(): string | null {
   return localStorage.getItem('consenti_token')
 }
 
+const SITE_KEY = 'consenti_site'
+
+/** The site the dashboard is working on (picked in the header); 'default' when none is chosen. */
+export function getSite(): string {
+  try { return localStorage.getItem(SITE_KEY) || 'default' } catch { return 'default' }
+}
+
+export function setSite(tenantId: string): void {
+  try {
+    if (tenantId === 'default') localStorage.removeItem(SITE_KEY)
+    else localStorage.setItem(SITE_KEY, tenantId)
+  } catch { /* storage blocked: stay on the default site */ }
+}
+
+/** Adds `?tenantId=` for the chosen site, unless the path already names a site. */
+function withSite(path: string): string {
+  const site = getSite()
+  if (site === 'default' || /[?&]tenantId=/.test(path)) return path
+  return `${path}${path.includes('?') ? '&' : '?'}tenantId=${encodeURIComponent(site)}`
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message)
@@ -37,7 +58,7 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${withSite(path)}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -74,7 +95,7 @@ function filenameFromContentDisposition(header: string | null): string | null {
  */
 export async function apiDownload(path: string): Promise<void> {
   const token = getToken()
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${withSite(path)}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
 

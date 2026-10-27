@@ -2,7 +2,7 @@ import type { StorageAdapter, AuthConfig, GppConfig } from '@consenti/types'
 import { hashRegistrationFields, isRegistrationConfirmed } from '../../tcf/registration-confirmation'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { authenticate, authError, serverWideOnly } from '../../middleware/auth.middleware'
 
 /**
  * GPP registration confirmation — same hash-based governance shape as TCF's
@@ -19,7 +19,7 @@ export function buildAdminGppRoutes(
 ) {
   async function auth(req: Request) {
     const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, 'settings:update') }
+    return { user, denied: authError(user, 'settings:update') ?? serverWideOnly(user) }
   }
 
   return {

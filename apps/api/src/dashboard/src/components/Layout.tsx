@@ -3,6 +3,7 @@ import type { ComponentChildren, FunctionComponent } from 'preact'
 import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { DarkModeToggle } from './DarkModeToggle'
+import { SitePicker } from './SitePicker'
 import { LocaleSwitcher } from '../context/locale'
 import { useT } from '../context/locale'
 import { useAuth } from '../context/auth'
@@ -53,6 +54,7 @@ export function Layout({ children, title, current }: Props) {
             ? <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">{title}</h1>
             : <span />}
           <div class="flex items-center gap-3">
+            <SitePicker />
             <DarkModeToggle />
             <LocaleSwitcher />
             <button

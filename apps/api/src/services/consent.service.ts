@@ -92,7 +92,8 @@ export class ConsentService {
   private async isTcfConfirmed(): Promise<boolean> {
     if (!this.tcfConfig?.enabled) return true
     if (!this.storage) return false
-    const settings = await this.storage.getSettings(this.tenantId)
+    // TCF/GPP registration is server-wide, kept on the default site's settings.
+    const settings = await this.storage.getSettings('default')
     return isRegistrationConfirmed(
       true,
       { cmpId: this.tcfConfig.cmpId, cmpVersion: this.tcfConfig.cmpVersion, publisherCC: this.tcfConfig.publisherCC },
@@ -104,7 +105,8 @@ export class ConsentService {
   private async isGppConfirmed(): Promise<boolean> {
     if (!this.gppConfig?.enabled) return true
     if (!this.storage) return false
-    const settings = await this.storage.getSettings(this.tenantId)
+    // TCF/GPP registration is server-wide, kept on the default site's settings.
+    const settings = await this.storage.getSettings('default')
     return isRegistrationConfirmed(
       true,
       { cmpId: this.gppConfig.cmpId, cmpVersion: this.gppConfig.cmpVersion },

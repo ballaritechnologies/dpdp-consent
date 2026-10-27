@@ -1,7 +1,7 @@
 import type { StorageAdapter, AuthConfig } from '@consenti/types'
 import { json, parseJsonBody } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { allSitesOnly, authenticate, authError } from '../../middleware/auth.middleware'
 
 /** The seeded "full system access" role (see `SEED_ROLES` in seed-data.ts) — every install's
  * break-glass role. Locked against update/delete so it can't be accidentally stripped of
@@ -15,7 +15,8 @@ export function buildAdminRoleRoutes(
 ) {
   async function auth(req: Request, perm?: string) {
     const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
+    // Roles are shared by every site: users limited to some sites may view them, not change them.
+    return { user, denied: authError(user, perm) ?? (perm === 'role:view' ? null : allSitesOnly(user)) }
   }
 
   return {

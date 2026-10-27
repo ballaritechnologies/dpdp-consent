@@ -1,24 +1,19 @@
 import type { StorageAdapter, AuthConfig, AuditFilters } from '@consenti/types'
 import { json, getQueryParam, getPagination } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
 
 export function buildAdminAuditRoutes(
   storage: StorageAdapter,
   authConfig: AuthConfig,
   secret: string,
 ) {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
   return {
     'GET /audit': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'audit:view')
-        if (denied) return denied
-        if (user?.allowedTenants.length && !user.allowedTenants.includes('default')) return json(200, { items: [], total: 0, page: 1, limit: 50 })
+        const g = await guard(req, 'audit:view'); if (g instanceof Response) return g
         const url = new URL(req.url)
         const action = getQueryParam(url, 'action')
         const resourceType = getQueryParam(url, 'resourceType')
@@ -29,7 +24,7 @@ export function buildAdminAuditRoutes(
         if ('error' in pagination) return errorResponse(400, pagination.error)
         const { page, limit } = pagination
         const filters: AuditFilters = {
-          tenantId: 'default',
+          tenantId: g.tenantId,
           page,
           limit,
           ...(action !== undefined ? { action } : {}),
@@ -44,11 +39,9 @@ export function buildAdminAuditRoutes(
 
     'GET /audit/:id': async (req: Request, p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'audit:view')
-        if (denied) return denied
-        if (user?.allowedTenants.length && !user.allowedTenants.includes('default')) return errorResponse(403, 'Forbidden')
+        const g = await guard(req, 'audit:view'); if (g instanceof Response) return g
         const log = await storage.getAuditLogById(p['id'] ?? '')
-        if (!log || log.tenantId !== 'default') return errorResponse(404, 'Audit log entry not found')
+        if (!log || log.tenantId !== g.tenantId) return errorResponse(404, 'Audit log entry not found')
         return json(200, log)
       }),
   }

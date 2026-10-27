@@ -22,6 +22,7 @@
     "layout.expandSidebar": "展开侧边栏",
     "layout.collapseSidebar": "收起侧边栏",
     "layout.signOut": "退出登录",
+    "layout.site": "站点",
     "layout.toggleDark": "切换到深色模式",
     "layout.toggleLight": "切换到浅色模式",
     "layout.poweredBy": "技术支持",

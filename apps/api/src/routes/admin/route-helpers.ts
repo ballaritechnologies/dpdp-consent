@@ -9,7 +9,7 @@ export const EXPORT_PAGE = 1000
 /** `guard(req, permission)`: the caller and the `?tenantId=` they target (default `'default'`),
  * or an error response when they lack the permission or may not use that tenant. */
 export function tenantGuard(storage: StorageAdapter, authConfig: AuthConfig, secret: string) {
-  return async function guard(req: Request, permission: string): Promise<{ user: AuthenticatedUser; tenantId: string } | Response> {
+  return async function guard(req: Request, permission?: string): Promise<{ user: AuthenticatedUser; tenantId: string } | Response> {
     const user = await authenticate(req, storage, authConfig, secret)
     const denied = authError(user, permission)
     if (denied || !user) return denied ?? errorResponse(401, 'Unauthorized')

@@ -1,7 +1,7 @@
 import type { StorageAdapter, AuthConfig, VisitorFilters } from '@consenti/types'
 import { json, getQueryParam, getPagination } from '../../utils/http'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
-import { authenticate, authError } from '../../middleware/auth.middleware'
+import { tenantGuard } from './route-helpers'
 
 /** See NOTICE_SHOWN_ENABLED in routes/public/notice.routes.ts — same dormant feature, kept for future reference. */
 const NOTICE_SHOWN_ENABLED: boolean = false
@@ -11,17 +11,12 @@ export function buildAdminVisitorRoutes(
   authConfig: AuthConfig,
   secret: string,
 ) {
-  async function auth(req: Request, perm?: string) {
-    const user = await authenticate(req, storage, authConfig, secret)
-    return { user, denied: authError(user, perm) }
-  }
+  const guard = tenantGuard(storage, authConfig, secret)
 
   return {
     'GET /visitors': async (req: Request, _p: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
-        const { user, denied } = await auth(req, 'visitor:view')
-        if (denied) return denied
-        if (user?.allowedTenants.length && !user.allowedTenants.includes('default')) return json(200, { items: [], total: 0, page: 1, limit: 50 })
+        const g = await guard(req, 'visitor:view'); if (g instanceof Response) return g
         const url = new URL(req.url)
         const from = getQueryParam(url, 'from')
         const to = getQueryParam(url, 'to')
@@ -30,7 +25,7 @@ export function buildAdminVisitorRoutes(
         if ('error' in pagination) return errorResponse(400, pagination.error)
         const { page, limit } = pagination
         const filters: VisitorFilters = {
-          tenantId: 'default',
+          tenantId: g.tenantId,
           page,
           limit,
           ...(from !== undefined ? { from } : {}),
@@ -45,9 +40,8 @@ export function buildAdminVisitorRoutes(
       withErrorHandler(async () => {
         if (!NOTICE_SHOWN_ENABLED) return errorResponse(404, 'Not found')
 
-        const { denied } = await auth(req, 'visitor:view')
-        if (denied) return denied
-        const records = await storage.getNoticeShownForVisitor(p['visitorId'] ?? '')
+        const g = await guard(req, 'visitor:view'); if (g instanceof Response) return g
+        const records = (await storage.getNoticeShownForVisitor(p['visitorId'] ?? '')).filter(r => r.tenantId === g.tenantId)
         return json(200, records)
       }),
   }

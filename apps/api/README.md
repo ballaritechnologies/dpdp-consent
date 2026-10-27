@@ -776,7 +776,7 @@ Content-Type: application/json
 **Session length**: admin tokens are valid for 30 minutes from issuance, not a flat expiry from
 login — the dashboard calls `POST /auth/refresh` on user activity (mouse/keyboard/scroll/touch) to
 extend it another 30 minutes, and proactively logs the user out the moment 30 minutes pass with no
-activity at all, rather than leaving the session to silently lapse in the background.
+activity at all, rather than leaving the session to silently lapse in the background. In `local` auth mode the server also checks the user on every request, so deactivating or deleting a user, or changing their roles or sites, applies to an open session straight away.
 
 **SSO (OIDC / SAML)**: set `auth.mode: 'oidc'` (with `auth.oidc: { issuer, clientId, clientSecret,
 redirectUri, claimsMapping? }`) or `auth.mode: 'saml'` (with `auth.saml: { issuer, entryPoint, cert,

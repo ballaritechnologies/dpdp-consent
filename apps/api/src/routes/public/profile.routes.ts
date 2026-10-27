@@ -1,8 +1,9 @@
 import type { ProfileService } from '../../services/profile.service'
+import { forTenant, type PerTenant } from '../../services/tenant-services'
 import type { GeoResolverService, ResolvedGeo } from '../../services/geo-resolver.service'
 import type { RegimeService } from '../../services/regime.service'
 import { RegimeNotImplementedError, hardenProfile } from '@consenti/utils'
-import { isSafeTenantId } from '../../utils/path-segment'
+import { isSafeTenantId, isSafeLocale } from '../../utils/path-segment'
 import { json } from '../../utils/http'
 import { parseAcceptLanguage, sanitizeLanguages, sanitizeLocale } from '../../utils/geo-hints'
 import { errorResponse, withErrorHandler } from '../../middleware/error.middleware'
@@ -32,8 +33,11 @@ export interface ProfileRouteOptions {
   multiTenant?: boolean
 }
 
+/** A compliance group key or a profile id: one directory name under `profiles/<tenant>/`. */
+const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,100}$/
+
 export function buildProfileRoutes(
-  profiles: ProfileService,
+  profilesIn: PerTenant<ProfileService>,
   geoResolver?: GeoResolverService,
   profilesDir?: string,
   basePath = '',
@@ -57,6 +61,15 @@ export function buildProfileRoutes(
     }
   }
 
+  /** Path parts that become directory and file names: never anything that could leave
+   * `profiles/<tenant>/` (`..`, separators, reserved names). */
+  function safePathParts(tenantId: string | undefined, segment: string | undefined, locale: string | undefined): boolean {
+    // Single-site servers only have the default site's files and profiles.
+    if (!options.multiTenant && tenantId !== 'default') return false
+    return isSafeTenantId(tenantId) && typeof segment === 'string' && SAFE_SEGMENT.test(segment)
+      && (locale === 'default' || isSafeLocale(locale))
+  }
+
   return {
     // Static file route — primary hot-serve path, zero DB when file exists
     'GET /profiles/:tenantId/:complianceGroupOrProfileId/:locale': async (
@@ -66,6 +79,8 @@ export function buildProfileRoutes(
       withErrorHandler(async () => {
         const { tenantId, complianceGroupOrProfileId, locale } = params as Record<string, string>
         if (!tenantId || !complianceGroupOrProfileId || !locale) return errorResponse(400, 'Missing path parameters')
+        if (!safePathParts(tenantId, complianceGroupOrProfileId, locale)) return errorResponse(400, 'Invalid path parameters')
+        const profiles = forTenant(profilesIn, tenantId)
 
         if (profilesDir) {
           const filePath = join(profilesDir, tenantId, complianceGroupOrProfileId, `${locale}.json`)
@@ -88,8 +103,10 @@ export function buildProfileRoutes(
       params: Record<string, string>,
     ): Promise<Response> =>
       withErrorHandler(async () => {
-        const { profileId, entryId, locale } = params as Record<string, string>
+        const { tenantId, profileId, entryId, locale } = params as Record<string, string>
         if (!profileId || !entryId || !locale) return errorResponse(400, 'Missing path parameters')
+        if (!safePathParts(tenantId, profileId, locale) || !SAFE_SEGMENT.test(entryId)) return errorResponse(400, 'Invalid path parameters')
+        const profiles = forTenant(profilesIn, tenantId!)
 
         const content = await profiles.getVersionFile(profileId, entryId, locale)
         if (!content) return errorResponse(404, 'Version not found')
@@ -148,7 +165,7 @@ export function buildProfileRoutes(
           return json(200, { path: null, complianceGroup: 'opt-in', locale: requestedLocale || 'en', found: false, ...sensitiveOptIn })
         }
 
-        const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup, tenantId)
+        const profile = await forTenant(profilesIn, tenantId).findActiveByComplianceGroup(geo.complianceGroup, tenantId)
         if (!profile) {
           return json(200, { path: null, complianceGroup: geo.complianceGroup, locale: requestedLocale || 'en', found: false, ...sensitiveOptIn })
         }
@@ -193,20 +210,24 @@ export function buildProfileRoutes(
       }),
 
     // Legacy: single-param profile route (by ID)
-    'GET /profiles/:id': async (_request: Request, params: Record<string, string>): Promise<Response> =>
+    'GET /profiles/:id': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
         const id = params['id']
         if (!id) return errorResponse(400, 'Missing profile id')
-        const result = await profiles.getResolved(id)
+        const tenantId = publicTenant(new URL(request.url))
+        if (tenantId === null) return errorResponse(400, 'Invalid tenant')
+        const result = await forTenant(profilesIn, tenantId).getResolved(id)
         if (!result) return errorResponse(404, 'Profile not found')
         return json(200, result)
       }),
 
-    'GET /profiles/:id/:locale': async (_request: Request, params: Record<string, string>): Promise<Response> =>
+    'GET /profiles/:id/:locale': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
         const { id, locale } = params as Record<string, string>
         if (!id) return errorResponse(400, 'Missing profile id')
-        const result = await profiles.getResolved(id, locale)
+        const tenantId = publicTenant(new URL(request.url))
+        if (tenantId === null) return errorResponse(400, 'Invalid tenant')
+        const result = await forTenant(profilesIn, tenantId).getResolved(id, locale)
         if (!result) return errorResponse(404, 'Profile not found')
         return json(200, result)
       }),
@@ -228,6 +249,7 @@ export function buildProfileRoutes(
         if (routed instanceof Response) return routed
         const geo = routed
         if (!geo.complianceGroup) return errorResponse(404, 'Could not resolve compliance group for this location')
+        const profiles = forTenant(profilesIn, tenantId)
         const profile = await profiles.findActiveByComplianceGroup(geo.complianceGroup, tenantId)
         if (!profile) return errorResponse(404, `No active profile found for compliance group: ${geo.complianceGroup}`)
         const resolved = await profiles.getResolved(profile.id, locale)

@@ -38,6 +38,7 @@ import { RetentionService } from './services/retention.service'
 import { ParentalConsentService } from './services/parental-consent.service'
 import { BreachService } from './services/breach.service'
 import { ConsentManagerService } from './services/consent-manager.service'
+import { TenantServices } from './services/tenant-services'
 import { LocalAuth } from './auth/local.auth'
 import { buildProfileRoutes } from './routes/public/profile.routes'
 import { buildConsentRoutes } from './routes/public/consent.routes'
@@ -66,7 +67,7 @@ import { buildAdminUITemplateRoutes } from './routes/admin/ui-templates.routes'
 import { buildAdminAnalyticsRoutes } from './routes/admin/analytics.routes'
 import { buildAdminSetupRoutes } from './routes/admin/setup.routes'
 import { resolveStoragePaths } from './utils/storage-path'
-import { resolveTenant } from './middleware/tenant.middleware'
+import { resolveTenant, publicTenantResolver } from './middleware/tenant.middleware'
 import { RateLimiter } from './middleware/rate-limit.middleware'
 import { handleCors, withCors, addSecurityHeaders, checkOriginAllowed } from './middleware/cors.middleware'
 import { errorResponse } from './middleware/error.middleware'
@@ -465,33 +466,43 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
 
   const receiptService = new ReceiptService(storage, compliance.dataSigningHash)
   const noticeVersionService = new NoticeVersionService(storage)
-  const profileService = new ProfileService(profileRepo, auditRepo, 'default', storage, eventBus, localeCache, profilesDir, config.handleCache, config.s3Api, noticeVersionService)
-  const visitorService = new VisitorService(visitorRepo, 'default', eventBus, compliance.dataSigningHash)
-  const noticeService = new NoticeService(noticeRepo, 'default')
   const parentalConsentService = new ParentalConsentService(
     storage, auditRepo, id => receiptService.visitorRef(id), compliance.parentalConsentProvider,
   )
-  const consentService = new ConsentService(
-    consentRepo, visitorRepo, profileRepo, auditRepo, 'default', config.compliance,
-    pluginEngine, eventBus, compliance.tcf, storage, compliance.dataSigningHash, compliance.gpp,
-    (id, version) => profileService.getArchivedSnapshot(id, version),
-    receiptService,
-    parentalConsentService,
-  )
+  // Profile, consent, visitor and notice services are bound to one site; each site gets its own
+  // set, built on first use. `default` is the single-site case and keeps these variable names.
+  const buildTenantServices = (tenantId: string) => {
+    const profiles = new ProfileService(profileRepo, auditRepo, tenantId, storage, eventBus, localeCache, profilesDir, config.handleCache, config.s3Api, noticeVersionService)
+    return {
+      profiles,
+      visitors: new VisitorService(visitorRepo, tenantId, eventBus, compliance.dataSigningHash),
+      notices: new NoticeService(noticeRepo, tenantId),
+      consents: new ConsentService(
+        consentRepo, visitorRepo, profileRepo, auditRepo, tenantId, config.compliance,
+        pluginEngine, eventBus, compliance.tcf, storage, compliance.dataSigningHash, compliance.gpp,
+        (id, version) => profiles.getArchivedSnapshot(id, version),
+        receiptService,
+        parentalConsentService,
+      ),
+    }
+  }
+  const tenantServices = new TenantServices(buildTenantServices)
+  const { profiles: profileService, visitors: visitorService, notices: noticeService, consents: consentService } = tenantServices.for('default')
   const breachService = new BreachService(storage, auditRepo, [
     ...(compliance.breachTemplatesDir ? [compliance.breachTemplatesDir] : []),
     join(DIST_DIR, 'templates', 'breach'),        // built package
     join(DIST_DIR, '..', 'templates', 'breach'),  // running from source
   ], eventBus)
   const consentManagerService = new ConsentManagerService(storage, auditRepo, receiptService, async tenantId => {
-    const profile = await profileService.findActiveByComplianceGroup('opt-in-dpdpa', tenantId)
+    const { profiles, consents } = tenantServices.for(tenantId)
+    const profile = await profiles.findActiveByComplianceGroup('opt-in-dpdpa', tenantId)
     if (!profile) return null
-    const categories = await consentService.purposesFor(profile.id)
+    const categories = await consents.purposesFor(profile.id)
     return categories ? { profile, categories } : null
   }, compliance.consentManagers ?? [], eventBus)
-  const retentionService = new RetentionService(storage, consentService, receiptService, auditRepo, eventBus)
+  const retentionService = new RetentionService(storage, tenantId => tenantServices.for(tenantId).consents, receiptService, auditRepo, eventBus)
   const erasureRequestService = new ErasureRequestService(
-    storage, auditRepo, id => receiptService.visitorRef(id), id => consentService.erase(id),
+    storage, auditRepo, id => receiptService.visitorRef(id), (tenantId, id) => tenantServices.for(tenantId).consents.erase(id),
     tenantId => retentionService.getPolicy(tenantId),
   )
   const userService = new UserService(userRepo, auditRepo)
@@ -510,6 +521,10 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
   const resolveTenantId = multiTenantEnabled
     ? (req: Request) => resolveTenant(req, storage, 'default')
     : async (_req: Request) => 'default'
+
+  // Public routes name their site with `?tenant=` (or an API key). Unknown sites are rejected
+  // instead of silently falling back to `default`.
+  const resolvePublicTenantId = multiTenantEnabled ? publicTenantResolver(storage) : async (_req: Request) => 'default'
 
   const basePath = config.basePath!
   const apiBase = `${basePath}/api/v1`
@@ -558,12 +573,14 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
         prefix: apiBase,
         rateLimit: true,
         routes: {
-          ...buildProfileRoutes(profileService, geoResolver, profilesDir, apiBase, { regime: regimeService, multiTenant: multiTenantEnabled }),
-          ...buildConsentRoutes(consentService, visitorService, profileService, resolveTenantId, storage, compliance.dataSigningHash, eventBus, compliance.parentalConsentTokenTtlDays ?? 7, erasureRequestService, parentalConsentService),
+          ...buildProfileRoutes(tenantId => tenantServices.for(tenantId).profiles, geoResolver, profilesDir, apiBase, { regime: regimeService, multiTenant: multiTenantEnabled }),
+          ...buildConsentRoutes(
+            tenantId => tenantServices.for(tenantId).consents, tenantId => tenantServices.for(tenantId).visitors,
+            tenantId => tenantServices.for(tenantId).profiles, resolvePublicTenantId, storage, compliance.dataSigningHash, eventBus, compliance.parentalConsentTokenTtlDays ?? 7, erasureRequestService, parentalConsentService),
           ...buildNoticeRoutes(noticeService),
           ...buildTcfStatusRoutes(storage, compliance.tcf),
           ...buildGppStatusRoutes(storage, compliance.gpp),
-          ...buildConsentManagerRoutes(consentManagerService, resolveTenantId),
+          ...buildConsentManagerRoutes(consentManagerService, resolvePublicTenantId),
         },
       },
       {
@@ -842,6 +859,8 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     fastifyHandler,
     honoApp,
     services,
+    /** Profile, consent, visitor and notice services bound to one site (`services` is the default site's). */
+    servicesFor: (tenantId: string) => tenantServices.for(tenantId),
     storage: storage as StorageAdapter,
     eventBus,
     ready,

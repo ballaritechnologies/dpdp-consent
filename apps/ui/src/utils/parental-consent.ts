@@ -12,6 +12,8 @@ import { isClient } from './ssr'
 export interface ParentalConsentApiConfig {
   baseUrl?: string
   authToken?: string
+  /** The site (tenant) the token belongs to, on a multi-site server. */
+  tenantId?: string
 }
 
 /**
@@ -27,7 +29,7 @@ export async function resolveParentalConsent(
 ): Promise<ParentalConsentGrantedDetail> {
   const base = apiConfig.baseUrl ?? (isClient() ? window.location.origin : '')
   const result = await httpRequest<ParentalConsentGrantedDetail>(
-    `${base}/consenti/api/v1/consent/parental-consent-resolve`,
+    `${base}/consenti/api/v1/consent/parental-consent-resolve${apiConfig.tenantId && apiConfig.tenantId !== 'default' ? `?tenant=${encodeURIComponent(apiConfig.tenantId)}` : ''}`,
     { method: 'POST', body: JSON.stringify({ token }) },
     apiConfig.authToken,
   )

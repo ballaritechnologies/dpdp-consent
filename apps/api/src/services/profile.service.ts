@@ -175,6 +175,12 @@ export class ProfileService {
     }
   }
 
+  /** A profile on this service's site; another site's profile reads as not found. */
+  private async ownProfile(id: string): Promise<Profile | null> {
+    const profile = await this.profiles.get(id)
+    return profile && profile.tenantId === this.tenantId ? profile : null
+  }
+
   async create(input: Omit<CreateProfileInput, 'tenantId'>, actorId?: string): Promise<Profile> {
     const { localeContent, ...rest } = input
     const profile = await this.profiles.create({ ...rest, tenantId: this.tenantId })
@@ -208,7 +214,7 @@ export class ProfileService {
    * back off the source's current version files so the copy carries every locale forward too.
    */
   async copy(id: string, name?: string, actorId?: string): Promise<Profile> {
-    const src = await this.profiles.get(id)
+    const src = await this.ownProfile(id)
     if (!src) throw new Error(`Profile ${id} not found`)
     const locales = src.profileJson.locales?.length ? src.profileJson.locales : [src.defaultLocale]
     const localeContent: Record<string, LocaleContentInput> = {}
@@ -239,7 +245,7 @@ export class ProfileService {
    * on disk (see {@link listVersions}) is the audit trail for that edit.
    */
   async update(id: string, input: UpdateProfileInput, actorId?: string): Promise<Profile> {
-    const old = await this.profiles.get(id)
+    const old = await this.ownProfile(id)
     if (!old) throw new Error(`Profile ${id} not found`)
     const { localeContent, ...rest } = input
 
@@ -279,7 +285,7 @@ export class ProfileService {
   }
 
   async delete(id: string, actorId?: string): Promise<void> {
-    const old = await this.profiles.get(id)
+    const old = await this.ownProfile(id)
     await this.profiles.delete(id)
     this.localeCache?.invalidate(id)
     await this.audit.log({
@@ -315,7 +321,7 @@ export class ProfileService {
   }
 
   async activate(id: string, actorId?: string): Promise<Profile> {
-    const profile = await this.profiles.get(id)
+    const profile = await this.ownProfile(id)
     if (!profile) throw new Error(`Profile ${id} not found`)
     const groupKey = this.groupKey(profile.profileJson)
     const updated = await this.profiles.update(id, {
@@ -332,7 +338,7 @@ export class ProfileService {
   }
 
   async deactivate(id: string, actorId?: string): Promise<Profile> {
-    const profile = await this.profiles.get(id)
+    const profile = await this.ownProfile(id)
     if (!profile) throw new Error(`Profile ${id} not found`)
     const groupKey = this.groupKey(profile.profileJson)
     const updated = await this.profiles.update(id, {
@@ -369,7 +375,7 @@ export class ProfileService {
   }
 
   async get(id: string): Promise<Profile | null> {
-    return this.profiles.get(id)
+    return this.ownProfile(id)
   }
 
   /**
@@ -382,7 +388,7 @@ export class ProfileService {
    * falls back to this for previewing an inactive/versioned profile.
    */
   async getResolved(id: string, locale?: string): Promise<PublicProfileResponse | null> {
-    const profile = await this.profiles.get(id)
+    const profile = await this.ownProfile(id)
     if (!profile) return null
 
     const currentLocale = locale ?? profile.defaultLocale

@@ -67,7 +67,7 @@ export function validateRetentionPolicy(input: unknown): RetentionPolicy {
 export class RetentionService {
   constructor(
     private storage: StorageAdapter,
-    private consents: RetentionConsentOps,
+    private consentsFor: (tenantId: string) => RetentionConsentOps,
     private receipts: ReceiptService,
     private audit: AuditRepo,
     private eventBus?: EventEmitter,
@@ -102,6 +102,7 @@ export class RetentionService {
     const policy = await this.getPolicy(tenantId)
     const result: RetentionRunResult = { dryRun, ranAt: now.toISOString(), expired: [], receiptsDeleted: 0, erasureRequestsDeleted: 0 }
 
+    const consents = this.consentsFor(tenantId)
     const expiry = policy.purposeExpiryDays ?? {}
     const minDays = Math.min(...Object.values(expiry))
     if (Number.isFinite(minDays)) {
@@ -113,7 +114,7 @@ export class RetentionService {
       }
       const purposeCache = new Map<string, CategoryMap | null>()
       for (const record of candidates) {
-        if (!purposeCache.has(record.profileId)) purposeCache.set(record.profileId, await this.consents.purposesFor(record.profileId))
+        if (!purposeCache.has(record.profileId)) purposeCache.set(record.profileId, await consents.purposesFor(record.profileId))
         const categories = purposeCache.get(record.profileId)
         if (!categories) continue
         const lapsed = await this.lapsedPurposes(tenantId, record, categories, expiry, now)
@@ -122,7 +123,7 @@ export class RetentionService {
         if (dryRun) continue
         const consentJson: ConsentValue = { ...record.consentJson }
         for (const p of lapsed) for (const cookie of categories[p]?.cookies ?? []) consentJson[cookie] = 'denied'
-        await this.consents.update(record.visitorId, { consentJson }, { action: 'expired', expiredPurposes: lapsed })
+        await consents.update(record.visitorId, { consentJson }, { action: 'expired', expiredPurposes: lapsed })
         this.eventBus?.emit('consent:purposes_expired', { tenantId, visitorId: record.visitorId, purposes: lapsed })
       }
     }

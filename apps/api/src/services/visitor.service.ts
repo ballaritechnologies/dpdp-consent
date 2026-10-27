@@ -2,6 +2,7 @@ import type { Visitor, CreateVisitorInput } from '@consenti/types'
 import { hashIp, hashUserAgent } from '../utils/crypto'
 import type { VisitorRepo } from '../repositories/visitor.repo'
 import type { EventEmitter } from 'node:events'
+import { HttpError } from '../middleware/error.middleware'
 
 export class VisitorService {
   constructor(
@@ -20,6 +21,9 @@ export class VisitorService {
     city?: string
   }): Promise<Visitor> {
     const existing = await this.visitors.get(data.visitorId)
+    // Visitor IDs are unique across sites; one already used by another site is refused rather
+    // than touching that site's row.
+    if (existing && existing.tenantId !== this.tenantId) throw new HttpError(409, 'Visitor ID not available')
     if (existing) {
       return this.visitors.update(data.visitorId, {
         ...(data.country != null ? { country: data.country } : {}),

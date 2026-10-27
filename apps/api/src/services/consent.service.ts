@@ -1,5 +1,5 @@
 import type {
-  ConsentDbRecord, ConsentVerifyResult, CreateConsentInput, UpdateConsentInput,
+  Profile, ConsentDbRecord, ConsentVerifyResult, CreateConsentInput, UpdateConsentInput,
   ComplianceConfig, TcfConfig, GppConfig, CategoryMap, ConsentReceiptAction, CookieMap, ProfileConfig, StorageAdapter, PublicProfileResponse,
 } from '@consenti/types'
 import type { RecordProfileRef } from '../core/consent-engine'
@@ -17,6 +17,7 @@ import type { AuditRepo } from '../repositories/audit.repo'
 import type { PluginEngine } from '../core/plugin-engine'
 import type { EventEmitter } from 'node:events'
 import { applyCookiesOverride } from './profile.service'
+import { HttpError } from '../middleware/error.middleware'
 import type { ReceiptWriter } from './receipt.service'
 
 export class ConsentService {
@@ -37,6 +38,18 @@ export class ConsentService {
     private receipts?: ReceiptWriter,
     private minors?: { isParentVerified(tenantId: string, visitorId: string): Promise<boolean> },
   ) { }
+
+  /** The visitor's consent record on this service's site; another site's record reads as none. */
+  private async ownConsent(visitorId: string): Promise<ConsentDbRecord | null> {
+    const record = await this.consents.get(visitorId)
+    return record && record.tenantId === this.tenantId ? record : null
+  }
+
+  /** A profile on this service's site; another site's profile reads as not found. */
+  private async ownProfile(profileId: string): Promise<Profile | null> {
+    const profile = await this.profiles.get(profileId)
+    return profile && profile.tenantId === this.tenantId ? profile : null
+  }
 
   /**
    * `strictest_global` honours the Global Privacy Control signal even on the DPDP flow: with GPC,
@@ -121,7 +134,7 @@ export class ConsentService {
   }
 
   async create(input: Omit<CreateConsentInput, 'tenantId'>): Promise<ConsentDbRecord> {
-    const profile = await this.profiles.get(input.profileId)
+    const profile = await this.ownProfile(input.profileId)
     if (!profile) throw new Error(`Profile ${input.profileId} not found`)
 
     const regulation = profile.profileJson.regulation
@@ -156,7 +169,9 @@ export class ConsentService {
 
     builtConsent = await this.applyRegimeGpc(builtConsent, input.gpcDetected, profileCookies, categories)
 
-    const existing = await this.consents.get(input.visitorId)
+    const raw = await this.consents.get(input.visitorId)
+    if (raw && raw.tenantId !== this.tenantId) throw new HttpError(409, 'Visitor ID not available')
+    const existing = raw
     const isMinor = (input.ageVerified ?? existing?.ageVerified) === false
     let parentVerified = false
     if (isMinor) {
@@ -303,10 +318,10 @@ export class ConsentService {
     input: UpdateConsentInput,
     receipt: { action?: ConsentReceiptAction; expiredPurposes?: string[] } = {},
   ): Promise<ConsentDbRecord> {
-    const existing = await this.consents.get(visitorId)
+    const existing = await this.ownConsent(visitorId)
     if (!existing) throw new Error(`Consent for visitor ${visitorId} not found`)
 
-    const profile = await this.profiles.get(existing.profileId)
+    const profile = await this.ownProfile(existing.profileId)
     if (!profile) throw new Error(`Profile ${existing.profileId} not found`)
 
     const regulation = profile.profileJson.regulation
@@ -379,20 +394,20 @@ export class ConsentService {
 
   /** The purposes (categories) of a profile, resolved through its consent template if needed. */
   async purposesFor(profileId: string): Promise<CategoryMap | null> {
-    const profile = await this.profiles.get(profileId)
+    const profile = await this.ownProfile(profileId)
     if (!profile) return null
     return (await this.resolveTemplateData(profile.profileJson)).categories
   }
 
   get(visitorId: string): Promise<ConsentDbRecord | null> {
-    return this.consents.get(visitorId)
+    return this.ownConsent(visitorId)
   }
 
   async verify(visitorId: string): Promise<ConsentVerifyResult> {
-    const record = await this.consents.get(visitorId)
+    const record = await this.ownConsent(visitorId)
     if (!record) return { valid: false, reasons: ['profile_changed'] }
 
-    const row = await this.profiles.get(record.profileId)
+    const row = await this.ownProfile(record.profileId)
     // A deleted profile's row is gone but its snapshots stay on disk; resolve to the newest one.
     const archived = row ? null : await this.archivedSnapshot?.(record.profileId, record.profileVersion) ?? null
     if (!row && !archived) return { valid: false, reasons: ['profile_changed'] }
@@ -407,7 +422,13 @@ export class ConsentService {
   }
 
   async erase(visitorId: string): Promise<void> {
-    const existing = await this.consents.get(visitorId)
+    // Storage deletes by visitor ID across sites, so check first: another site's consent record
+    // or visitor row is left alone (and this call is a no-op for it).
+    const raw = await this.consents.get(visitorId)
+    if (raw && raw.tenantId !== this.tenantId) return
+    const visitor = await this.visitors.get(visitorId)
+    if (visitor && visitor.tenantId !== this.tenantId) return
+    const existing = raw
     await this.consents.delete(visitorId)
     await this.visitors.delete(visitorId)
     // The audit log keeps only a digest of what was erased, never the decisions themselves —
@@ -426,7 +447,7 @@ export class ConsentService {
       } : {}),
     })
     if (existing) {
-      const profile = await this.profiles.get(existing.profileId)
+      const profile = await this.ownProfile(existing.profileId)
       await this.receipts?.record({
         tenantId: existing.tenantId, visitorId, action: 'erased', record: null, profile, categories: {}, previous: existing,
       })

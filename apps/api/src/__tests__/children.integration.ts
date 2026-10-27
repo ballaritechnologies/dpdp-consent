@@ -207,10 +207,10 @@ describe('children: server enforcement and parental consent', () => {
 
   test('admin routes: list and decide', async () => {
     const audit = new AuditRepo(storage)
-    const retention = new RetentionService(storage, consents, receipts, audit)
+    const retention = new RetentionService(storage, () => consents, receipts, audit)
     const admin = buildAdminRecordRoutes(storage, { mode: 'jwt' }, SECRET, {
       receipts, noticeVersions: new NoticeVersionService(storage), retention, parentalConsent: parental,
-      erasure: new ErasureRequestService(storage, audit, id => receipts.visitorRef(id), id => consents.erase(id), t => retention.getPolicy(t)),
+      erasure: new ErasureRequestService(storage, audit, id => receipts.visitorRef(id), (_t, id) => consents.erase(id), t => retention.getPolicy(t)),
     }) as Record<string, (r: Request, p: Record<string, string>) => Promise<Response>>
     const jwt = (perms: string[]) => signJwt({ sub: 'staff-1', email: 's@example.test', roles: [], permissions: perms, allowedTenants: [] }, SECRET)
     const req = await parental.request('default', 'v9', profile.id, null)

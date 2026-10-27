@@ -55,7 +55,7 @@ export class ErasureRequestService {
     private storage: StorageAdapter,
     private audit: AuditRepo,
     private visitorRef: (visitorId: string) => string,
-    private eraseConsent: (visitorId: string) => Promise<void>,
+    private eraseConsent: (tenantId: string, visitorId: string) => Promise<void>,
     private policy: (tenantId: string) => Promise<RetentionPolicy>,
   ) { }
 
@@ -115,7 +115,7 @@ export class ErasureRequestService {
     let consentErased = request.data.consentErased
     if (t.status === 'completed' && t.eraseConsent) {
       if (!request.data.visitorId) throw new ErasureRequestError('This request has no visitor ID to erase', 400)
-      await this.eraseConsent(request.data.visitorId)
+      await this.eraseConsent(tenantId, request.data.visitorId)
       consentErased = true
     }
 

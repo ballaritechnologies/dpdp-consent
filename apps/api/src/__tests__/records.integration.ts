@@ -56,8 +56,8 @@ describe('records', () => {
       new ConsentRepo(storage), new VisitorRepo(storage), new ProfileRepo(storage), audit, 'default',
       undefined, undefined, undefined, undefined, storage, SECRET, undefined, undefined, receipts,
     )
-    retention = new RetentionService(storage, consents, receipts, audit)
-    erasure = new ErasureRequestService(storage, audit, id => receipts.visitorRef(id), id => consents.erase(id), t => retention.getPolicy(t))
+    retention = new RetentionService(storage, () => consents, receipts, audit)
+    erasure = new ErasureRequestService(storage, audit, id => receipts.visitorRef(id), (_t, id) => consents.erase(id), t => retention.getPolicy(t))
     await profiles.seedDefaultProfile('opt-in-dpdpa')
     profile = (await profiles.findActiveByComplianceGroup('opt-in-dpdpa'))!
     categories = profile.profileJson.preferenceModal!.categories!

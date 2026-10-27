@@ -13,6 +13,7 @@ import {
   castCreateConsent, castUpdateConsent,
 } from '../../validators/consent.validator'
 import { randomVisitorId } from '../../utils/crypto'
+import { forTenant, type PerTenant } from '../../services/tenant-services'
 import { ErasureRequestError, type ErasureRequestService } from '../../services/erasure-request.service'
 import { ParentalConsentError, type ParentalConsentService } from '../../services/parental-consent.service'
 
@@ -32,9 +33,9 @@ function assertVisitorOwnership(request: Request, visitorId: string, secret: str
 }
 
 export function buildConsentRoutes(
-  consents: ConsentService,
-  visitors: VisitorService,
-  profiles: ProfileService,
+  consentsIn: PerTenant<ConsentService>,
+  visitorsIn: PerTenant<VisitorService>,
+  profilesIn: PerTenant<ProfileService>,
   resolveTenantId: (req: Request) => Promise<string> = async () => 'default',
   storage?: StorageAdapter,
   dataSigningHash = '',
@@ -46,6 +47,10 @@ export function buildConsentRoutes(
   return {
     'POST /consent': async (request: Request, _params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
+        const tenantId = await resolveTenantId(request)
+        const consents = forTenant(consentsIn, tenantId)
+        const visitors = forTenant(visitorsIn, tenantId)
+        const profiles = forTenant(profilesIn, tenantId)
         const body = await parseJsonBody(request)
         const validation = validateCreateConsent(body)
         if (!validation.valid) return errorResponse(400, validation.error ?? 'Invalid request')
@@ -57,8 +62,6 @@ export function buildConsentRoutes(
         // Layer 1: verify the profileId is real — blocks all requests with unknown profiles
         const profile = await profiles.get(profileId)
         if (!profile) return errorResponse(404, 'Profile not found')
-
-        const tenantId = await resolveTenantId(request)
 
         // Layer 3: enforce the profile's allowed-domains list, falling back to the tenant-wide
         // default (dashboard's API Config → Allowed Origins) when the profile doesn't set its own.
@@ -91,6 +94,8 @@ export function buildConsentRoutes(
 
     'PUT /consent/:visitorId': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
+        const tenantId = await resolveTenantId(request)
+        const consents = forTenant(consentsIn, tenantId)
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
@@ -117,6 +122,8 @@ export function buildConsentRoutes(
 
     'GET /consent/:visitorId': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
+        const tenantId = await resolveTenantId(request)
+        const consents = forTenant(consentsIn, tenantId)
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
@@ -134,6 +141,8 @@ export function buildConsentRoutes(
 
     'GET /consent/:visitorId/verify': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
+        const tenantId = await resolveTenantId(request)
+        const consents = forTenant(consentsIn, tenantId)
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
@@ -150,6 +159,8 @@ export function buildConsentRoutes(
 
     'DELETE /consent/:visitorId': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
+        const tenantId = await resolveTenantId(request)
+        const consents = forTenant(consentsIn, tenantId)
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
@@ -196,6 +207,8 @@ export function buildConsentRoutes(
     // replay isn't prevented (accepted tradeoff of staying stateless).
     'POST /consent/:visitorId/parental-consent-request': async (request: Request, params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
+        const tenantId = await resolveTenantId(request)
+        const profiles = forTenant(profilesIn, tenantId)
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
@@ -216,7 +229,7 @@ export function buildConsentRoutes(
         if (parentalConsent) {
           const locale = typeof body['locale'] === 'string' && body['locale'].length <= 35 ? body['locale'] : null
           try {
-            started = await parentalConsent.request(await resolveTenantId(request), visitorId, profileId, locale)
+            started = await parentalConsent.request(tenantId, visitorId, profileId, locale)
           } catch (err) {
             if (err instanceof ParentalConsentError) return errorResponse(err.status, err.message)
             throw err

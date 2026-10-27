@@ -222,7 +222,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
       const { httpRequest } = await import('../utils/http')
       const base = this.config.api.baseUrl ?? window.location.origin
       const status = await httpRequest<{ blocked: boolean }>(
-        `${base}/consenti/api/v1/${statusPath}/status`,
+        this.publicApiUrl(base, `${statusPath}/status`),
         {},
         this.config.api.authToken,
       )
@@ -557,7 +557,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
           const base = this.config.api.baseUrl ?? window.location.origin
           const { httpRequest } = await import('../utils/http')
           const response = await httpRequest<{ token: string }>(
-            `${base}/consenti/api/v1/consent/${this.visitorId()}/parental-consent-request`,
+            this.publicApiUrl(base, `consent/${this.visitorId()}/parental-consent-request`),
             { method: 'POST', body: JSON.stringify({ profileId: this.profileId(), locale: this.config.core.locale ?? 'en' }) },
             this.config.api.authToken,
           )
@@ -646,7 +646,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
       const base = this.config.api.baseUrl ?? window.location.origin
       const { httpRequest } = await import('../utils/http')
       const res = await httpRequest<{ status: 'none' | 'pending' | 'verified' | 'failed' }>(
-        `${base}/consenti/api/v1/consent/${this.visitorId()}/parental-consent`,
+        this.publicApiUrl(base, `consent/${this.visitorId()}/parental-consent`),
         { method: 'GET' },
         this.config.api.authToken,
       )
@@ -664,6 +664,14 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
       logger.warn('Parental-consent status check failed:', err)
       return 'pending'
     }
+  }
+
+  /** A public API URL, naming this widget's site (`api.tenantId` / `core.tenantId`) so a
+   * multi-site server records it there; omitted for the default site, keeping URLs unchanged. */
+  private publicApiUrl(base: string, path: string): string {
+    const tenantId = this.config.api?.tenantId ?? this.config.core?.tenantId ?? 'default'
+    const url = `${base}/consenti/api/v1/${path}`
+    return tenantId === 'default' ? url : `${url}${url.includes('?') ? '&' : '?'}tenant=${encodeURIComponent(tenantId)}`
   }
 
   private isDpdpProfile(): boolean {
@@ -1220,7 +1228,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
         const base = this.config.api.baseUrl ?? window.location.origin
         const { httpRequest } = await import('../utils/http')
         apiResponse = await httpRequest(
-          `${base}/consenti/api/v1/consent`,
+          this.publicApiUrl(base, 'consent'),
           {
             method: 'POST',
             body: JSON.stringify({
@@ -1504,7 +1512,7 @@ export class ConsentiSetup implements ConsentiWidgetAPI {
         const base = this.config.api.baseUrl ?? window.location.origin
         const { httpRequest } = await import('../utils/http')
         await httpRequest(
-          `${base}/consenti/api/v1/consent/${this.visitorId()}`,
+          this.publicApiUrl(base, `consent/${this.visitorId()}`),
           { method: 'DELETE' },
           this.config.api?.authToken,
         )

@@ -109,7 +109,7 @@ export class ConsentManagerService {
     const principal = `cm:${adapterId}:${artefact.principalRef}`
     const now = new Date().toISOString()
     const record: ConsentManagerArtefactRecord = {
-      id, tenantId, collection: 'cm_artefact', ref: this.receipts.visitorRef(principal), status: artefact.status,
+      id, tenantId, collection: 'cm_artefact', ref: this.receipts.visitorRef(tenantId, principal), status: artefact.status,
       dueAt: artefact.expiresAt ? new Date(artefact.expiresAt).toISOString() : null,
       createdAt: existing?.createdAt ?? now, updatedAt: now,
       data: {

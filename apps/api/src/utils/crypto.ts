@@ -70,6 +70,29 @@ export function verifyHmac(payload: string, signature: string, secret: string): 
   return timingSafeEqual(expected, actual)
 }
 
+/**
+ * Per-site signing keys, derived from the server's `dataSigningHash` (the master key). The
+ * `default` site signs with the master key itself, so single-site servers are unchanged; every
+ * other site signs with HMAC(master, site ID), so a signature, cookie or token made for one site
+ * never verifies for another, and receipt pseudonyms can't be linked across sites.
+ * Data a non-default site signed before per-site keys still verifies through the master key.
+ */
+export class SiteKeys {
+  constructor(private master: string) {}
+
+  /** The key that signs new data for a site ('' when the server has no master key). */
+  for(tenantId: string): string {
+    if (!this.master || tenantId === 'default') return this.master
+    return signHmac(`ijazat:site-key:v1:${tenantId}`, this.master)
+  }
+
+  /** Keys that verify a site's data, newest first. */
+  verifying(tenantId: string): string[] {
+    const own = this.for(tenantId)
+    return own === this.master ? [own] : [own, this.master]
+  }
+}
+
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex')
   const hash = scryptSync(password, salt, 64).toString('hex')

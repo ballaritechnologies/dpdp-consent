@@ -3,7 +3,7 @@ import type {
   ConsentReceiptData, PurposeState, EntityFilter, EntityListOptions,
 } from '@consenti/types'
 import { buildCookieCategoryIndex, isMandatoryCookie } from '@consenti/utils'
-import { signHmac, verifyHmac } from '../utils/crypto'
+import { signHmac, verifyHmac, SiteKeys } from '../utils/crypto'
 
 /** What ConsentService hands over after each write. */
 import { sortableEntityId } from '../storage/entity-sql'
@@ -36,13 +36,17 @@ export interface ReceiptWriter {
  * TODO(legal): Q-P1 — confirm that keeping pseudonymous receipts after erasure is acceptable.
  */
 export class ReceiptService implements ReceiptWriter {
-  constructor(private storage: StorageAdapter, private secret: string) {
+  private keys: SiteKeys
+
+  constructor(private storage: StorageAdapter, secret: string) {
     if (!secret) throw new Error('ReceiptService needs the data-signing secret')
+    this.keys = new SiteKeys(secret)
   }
 
-  /** Stable pseudonym for a visitor ID; the same input always maps to the same ref. */
-  visitorRef(visitorId: string): string {
-    return signHmac(`ijazat:visitor:${visitorId}`, this.secret)
+  /** Stable pseudonym for a visitor ID on a site; made with the site's key, so the same visitor
+   * ID on two sites gets unrelated refs. */
+  visitorRef(tenantId: string, visitorId: string): string {
+    return signHmac(`ijazat:visitor:${visitorId}`, this.keys.for(tenantId))
   }
 
   async record(e: ReceiptEvent): Promise<ServerConsentReceipt> {
@@ -71,7 +75,7 @@ export class ReceiptService implements ReceiptWriter {
       ...(e.expiredPurposes?.length ? { expiredPurposes: [...e.expiredPurposes] } : {}),
       ...(e.minor ? { minor: e.minor } : {}),
     }
-    const ref = this.visitorRef(e.visitorId)
+    const ref = this.visitorRef(e.tenantId, e.visitorId)
     const receipt: ServerConsentReceipt = {
       id: sortableEntityId('rcpt'),
       tenantId: e.tenantId,
@@ -81,21 +85,23 @@ export class ReceiptService implements ReceiptWriter {
       dueAt: null,
       createdAt: now,
       updatedAt: now,
-      data: { ...unsigned, signature: signHmac(receiptPayload(e.tenantId, ref, now, unsigned), this.secret) },
+      data: { ...unsigned, signature: signHmac(receiptPayload(e.tenantId, ref, now, unsigned), this.keys.for(e.tenantId)) },
     }
     await this.storage.putEntity(receipt)
     return receipt
   }
 
-  /** True when the receipt is unchanged since it was written. */
+  /** True when the receipt is unchanged since it was written (signed with its site's key, or the
+   * master key it was signed with before per-site keys). */
   verify(r: ServerConsentReceipt): boolean {
     const { signature, ...rest } = r.data
     if (!r.ref || typeof signature !== 'string') return false
-    return verifyHmac(receiptPayload(r.tenantId, r.ref, r.createdAt, rest), signature, this.secret)
+    const payload = receiptPayload(r.tenantId, r.ref, r.createdAt, rest)
+    return this.keys.verifying(r.tenantId).some(k => verifyHmac(payload, signature, k))
   }
 
   async forVisitor(tenantId: string, visitorId: string, options: EntityListOptions = {}): Promise<ServerConsentReceipt[]> {
-    return this.list({ tenantId, collection: 'consent_receipt', ref: this.visitorRef(visitorId) }, options)
+    return this.list({ tenantId, collection: 'consent_receipt', ref: this.visitorRef(tenantId, visitorId) }, options)
   }
 
   async list(filter: EntityFilter, options: EntityListOptions = {}): Promise<ServerConsentReceipt[]> {

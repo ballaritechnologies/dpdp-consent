@@ -57,7 +57,7 @@ describe('records', () => {
       undefined, undefined, undefined, undefined, storage, SECRET, undefined, undefined, receipts,
     )
     retention = new RetentionService(storage, () => consents, receipts, audit)
-    erasure = new ErasureRequestService(storage, audit, id => receipts.visitorRef(id), (_t, id) => consents.erase(id), t => retention.getPolicy(t))
+    erasure = new ErasureRequestService(storage, audit, (t, id) => receipts.visitorRef(t, id), (_t, id) => consents.erase(id), t => retention.getPolicy(t))
     await profiles.seedDefaultProfile('opt-in-dpdpa')
     profile = (await profiles.findActiveByComplianceGroup('opt-in-dpdpa'))!
     categories = profile.profileJson.preferenceModal!.categories!
@@ -181,7 +181,7 @@ describe('records', () => {
     const dry = await retention.run('default', { dryRun: true, now: later })
     assert.equal(dry.expired.length, 1)
     assert.deepEqual(dry.expired[0]!.purposes, ['analytics'])
-    assert.equal(dry.expired[0]!.visitorRef, receipts.visitorRef('visitor-r'))
+    assert.equal(dry.expired[0]!.visitorRef, receipts.visitorRef('default', 'visitor-r'))
     assert.equal((await consents.get('visitor-r'))!.consentJson[categories['analytics']!.cookies[0]!], 'granted', 'dry run changes nothing')
 
     const real = await retention.run('default', { now: later })
@@ -320,7 +320,7 @@ describe('records', () => {
     assert.equal(body.status, 'received')
     const stored = await erasure.get('default', body.id)
     assert.equal(stored!.data.channel, 'widget')
-    assert.equal(stored!.ref, receipts.visitorRef('visitor-p'))
+    assert.equal(stored!.ref, receipts.visitorRef('default', 'visitor-p'))
     assert.equal((await post({ cookie }, { message: 'x'.repeat(3000) })).status, 400)
   })
 })

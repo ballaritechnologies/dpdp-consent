@@ -40,7 +40,7 @@ reviewed by a lawyer before we describe a feature as ready; open points live in
 - Adapters for specific Consent Managers once they are registered and publish their formats
 - More Indian languages (data-only additions; native-speaker review welcome)
 - Rebranding the bundled documentation site, and publishing packages under an Ijazat npm scope
-- Finishing multi-tenant isolation in the admin API (see [audit.md](./audit.md), section 2)
+- Site-scoped storage lookups for multi-site servers (see [audit.md](./audit.md), section 2)
 
 ## Hosted version
 

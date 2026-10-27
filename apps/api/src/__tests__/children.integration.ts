@@ -109,7 +109,7 @@ describe('children: server enforcement and parental consent', () => {
     const audit = new AuditRepo(storage)
     receipts = new ReceiptService(storage, SECRET)
     provider = new MockParentalConsentProvider()
-    parental = new ParentalConsentService(storage, audit, id => receipts.visitorRef(id), provider)
+    parental = new ParentalConsentService(storage, audit, (t, id) => receipts.visitorRef(t, id), provider)
     profiles = new ProfileService(new ProfileRepo(storage), audit, 'default', storage, undefined, undefined, join(dir, 'profiles'))
     consents = new ConsentService(
       new ConsentRepo(storage), new VisitorRepo(storage), new ProfileRepo(storage), audit, 'default',
@@ -159,7 +159,7 @@ describe('children: server enforcement and parental consent', () => {
   test('requests: provider outcome, token, dashboard decision, records keep only the hashed visitor ID', async () => {
     const a = await parental.request('default', 'v1', profile.id, 'hi')
     assert.equal(a.data.providerId, 'mock')
-    assert.equal(a.ref, receipts.visitorRef('v1'))
+    assert.equal(a.ref, receipts.visitorRef('default', 'v1'))
     assert.doesNotMatch(JSON.stringify(a), /"v1"/)
     provider.reject(a.data.providerRef!)
     assert.equal((await parental.latest('default', 'v1'))!.status, 'failed')
@@ -210,7 +210,7 @@ describe('children: server enforcement and parental consent', () => {
     const retention = new RetentionService(storage, () => consents, receipts, audit)
     const admin = buildAdminRecordRoutes(storage, { mode: 'jwt' }, SECRET, {
       receipts, noticeVersions: new NoticeVersionService(storage), retention, parentalConsent: parental,
-      erasure: new ErasureRequestService(storage, audit, id => receipts.visitorRef(id), (_t, id) => consents.erase(id), t => retention.getPolicy(t)),
+      erasure: new ErasureRequestService(storage, audit, (t, id) => receipts.visitorRef(t, id), (_t, id) => consents.erase(id), t => retention.getPolicy(t)),
     }) as Record<string, (r: Request, p: Record<string, string>) => Promise<Response>>
     const jwt = (perms: string[]) => signJwt({ sub: 'staff-1', email: 's@example.test', roles: [], permissions: perms, allowedTenants: [] }, SECRET)
     const req = await parental.request('default', 'v9', profile.id, null)

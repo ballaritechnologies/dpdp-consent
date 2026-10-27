@@ -119,7 +119,7 @@ export class RetentionService {
         if (!categories) continue
         const lapsed = await this.lapsedPurposes(tenantId, record, categories, expiry, now)
         if (lapsed.length === 0) continue
-        result.expired.push({ visitorRef: this.receipts.visitorRef(record.visitorId), purposes: lapsed })
+        result.expired.push({ visitorRef: this.receipts.visitorRef(tenantId, record.visitorId), purposes: lapsed })
         if (dryRun) continue
         const consentJson: ConsentValue = { ...record.consentJson }
         for (const p of lapsed) for (const cookie of categories[p]?.cookies ?? []) consentJson[cookie] = 'denied'

@@ -117,7 +117,7 @@ export function verifyConsent(
   record: ConsentDbRecord,
   recordProfile: RecordProfileRef,
   activeProfile: Profile | null,
-  signingKey?: string,
+  signingKey?: string | string[],
 ): ConsentVerifyResult {
   const reasons: ConsentVerifyResult['reasons'] = []
 
@@ -129,9 +129,10 @@ export function verifyConsent(
     reasons.push('consent_expired')
   }
 
-  if (signingKey && record.signature) {
-    const expected = signHmac(buildConsentSignaturePayload(record), signingKey)
-    if (expected !== record.signature) reasons.push('hmac_invalid')
+  const keys = (Array.isArray(signingKey) ? signingKey : [signingKey]).filter((k): k is string => !!k)
+  if (keys.length > 0 && record.signature) {
+    const payload = buildConsentSignaturePayload(record)
+    if (!keys.some(k => signHmac(payload, k) === record.signature)) reasons.push('hmac_invalid')
   }
 
   return {

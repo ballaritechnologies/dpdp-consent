@@ -60,7 +60,7 @@ export type ParentalConsentTokenResult =
  */
 export function verifyParentalConsentToken(
   token: string,
-  signingKey: string | undefined,
+  signingKey: string | string[] | undefined,
   ttlDays: number,
 ): ParentalConsentTokenResult {
   if (!token.startsWith(TOKEN_PREFIX)) return { valid: false, reason: 'malformed' }
@@ -69,8 +69,9 @@ export function verifyParentalConsentToken(
   const encoded = dotIdx === -1 ? rest : rest.slice(0, dotIdx)
   const sig = dotIdx === -1 ? undefined : rest.slice(dotIdx + 1)
 
-  if (signingKey) {
-    if (!sig || !verifyHmac(encoded, sig, signingKey)) return { valid: false, reason: 'invalid_signature' }
+  const keys = (Array.isArray(signingKey) ? signingKey : [signingKey]).filter((k): k is string => !!k)
+  if (keys.length > 0) {
+    if (!sig || !keys.some(k => verifyHmac(encoded, sig, k))) return { valid: false, reason: 'invalid_signature' }
   }
 
   const payload = decodePayload(encoded)

@@ -14,6 +14,9 @@ import { join } from 'node:path'
 import type { ConsentDbRecord } from '@consenti/types'
 import { createConsenti } from '../index.js'
 import { TenantServices } from '../services/tenant-services.js'
+import { SiteKeys, signHmac } from '../utils/crypto.js'
+import { buildConsentSignaturePayload } from '../core/consent-engine.js'
+import { buildParentalConsentToken } from '../utils/parental-consent-token.js'
 
 const SIGNING = 'isolation-signing-secret'
 
@@ -74,7 +77,8 @@ describe('multi-site isolation (public API)', () => {
     const res = await give(siteB, 'visitor-b2', profileOf[siteB]!)
     const cookie = res.headers.get('set-cookie')!.split(';')[0]!
     const viaDefault = (method: string) => fetchApi('/consent/visitor-b2', { method, headers: { cookie, 'content-type': 'application/json' }, ...(method === 'PUT' ? { body: JSON.stringify({ consentJson: {} }) } : {}) })
-    assert.equal((await viaDefault('GET')).status, 404)
+    // Refused either way: site B's cookie isn't valid on site A (403), and the record isn't there (404).
+    assert.ok([403, 404].includes((await viaDefault('GET')).status))
     assert.notEqual((await viaDefault('PUT')).status, 200)
     await viaDefault('DELETE')
     assert.ok(await app.storage.getConsent('visitor-b2'), 'still there after a DELETE through the wrong site')
@@ -86,6 +90,36 @@ describe('multi-site isolation (public API)', () => {
     const res = await give('default', 'visitor-b3', profileOf['default']!)
     assert.equal(res.status, 409)
     assert.equal((await app.storage.getConsent('visitor-b3'))?.tenantId, siteB)
+  })
+
+  test('each site signs its consent records and receipts with its own key', async () => {
+    const keys = new SiteKeys(SIGNING)
+    await give(siteB, 'visitor-k1', profileOf[siteB]!)
+    const record = (await app.storage.getConsent('visitor-k1'))!
+    assert.equal(record.signature, signHmac(buildConsentSignaturePayload(record), keys.for(siteB)))
+    assert.notEqual(record.signature, signHmac(buildConsentSignaturePayload(record), SIGNING))
+    assert.equal(app.services.receipts.visitorRef('default', 'visitor-k1') === app.services.receipts.visitorRef(siteB, 'visitor-k1'), false)
+    const [receipt] = await app.services.receipts.forVisitor(siteB, 'visitor-k1')
+    assert.ok(receipt && app.services.receipts.verify(receipt), 'site B receipt verifies')
+    assert.equal(app.services.receipts.verify({ ...receipt, tenantId: 'default' }), false, 'not as another site\'s')
+  })
+
+  test('an ownership cookie signed with the master key before per-site keys still works', async () => {
+    await give(siteB, 'visitor-k2', profileOf[siteB]!)
+    const record = (await app.storage.getConsent('visitor-k2'))!
+    const legacy = `consenti_visitor-k2=${record.id}.${signHmac(`visitor-k2.${record.id}`, SIGNING)}`
+    assert.equal((await fetchApi(`/consent/visitor-k2?tenant=${siteB}`, { headers: { cookie: legacy } })).status, 200)
+    const otherSite = `consenti_visitor-k2=${record.id}.${signHmac(`visitor-k2.${record.id}`, new SiteKeys(SIGNING).for('other'))}`
+    assert.equal((await fetchApi(`/consent/visitor-k2?tenant=${siteB}`, { headers: { cookie: otherSite } })).status, 403)
+  })
+
+  test('a parental-consent token issued for site B is refused on another site', async () => {
+    const token = buildParentalConsentToken('kid-b', profileOf[siteB]!, new SiteKeys(SIGNING).for(siteB))
+    const resolve = (site: string) => fetchApi(`/consent/parental-consent-resolve${site === 'default' ? '' : `?tenant=${site}`}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }),
+    })
+    assert.equal((await resolve('default')).status, 403)
+    assert.equal((await resolve(siteB)).status, 200)
   })
 
   test('profile routes: by-id lookups follow the named site; file paths are validated', async () => {
@@ -197,6 +231,19 @@ describe('multi-site isolation (admin API)', () => {
   test('server-wide TCF settings are closed to site-limited users', async () => {
     const res = await admin(`/tcf/registration-status?tenantId=${siteB}`, bToken)
     assert.equal(res.status, 403)
+  })
+})
+
+describe('SiteKeys', () => {
+  test('default keeps the master key; other sites get distinct derived keys', () => {
+    const keys = new SiteKeys('master')
+    assert.equal(keys.for('default'), 'master')
+    assert.notEqual(keys.for('a'), 'master')
+    assert.notEqual(keys.for('a'), keys.for('b'))
+    assert.equal(keys.for('a'), new SiteKeys('master').for('a'), 'stable across restarts')
+    assert.deepEqual(keys.verifying('default'), ['master'])
+    assert.deepEqual(keys.verifying('a'), [keys.for('a'), 'master'])
+    assert.equal(new SiteKeys('').for('a'), '', 'no master key: unsigned, as before')
   })
 })
 

@@ -9,7 +9,7 @@ import { getGvl } from '../tcf/gvl-cache'
 import { encodeRealTcString } from '../tcf/real-tc-string'
 import { isRegistrationConfirmed } from '../tcf/registration-confirmation'
 import { encodeGppString } from '../gpp/gpp-string'
-import { signHmac } from '../utils/crypto'
+import { signHmac, SiteKeys } from '../utils/crypto'
 import type { ConsentRepo } from '../repositories/consent.repo'
 import type { VisitorRepo } from '../repositories/visitor.repo'
 import type { ProfileRepo } from '../repositories/profile.repo'
@@ -32,6 +32,7 @@ export class ConsentService {
     private eventBus?: EventEmitter,
     private tcfConfig?: TcfConfig,
     private storage?: StorageAdapter,
+    /** The master key; records are signed with this site's key derived from it (see SiteKeys). */
     private dataSigningHash?: string,
     private gppConfig?: GppConfig,
     private archivedSnapshot?: (profileId: string, version?: number) => Promise<PublicProfileResponse | null>,
@@ -85,7 +86,7 @@ export class ConsentService {
 
   private sign(payload: { tenantId: string; visitorId: string; profileId: string; locale: string; consentJson: ConsentDbRecord['consentJson'] }): string | undefined {
     if (!this.dataSigningHash) return undefined
-    return signHmac(buildConsentSignaturePayload(payload), this.dataSigningHash)
+    return signHmac(buildConsentSignaturePayload(payload), new SiteKeys(this.dataSigningHash).for(this.tenantId))
   }
 
   /** Fails closed: no `storage` to check against means unconfirmed, never assumed confirmed. */
@@ -420,7 +421,8 @@ export class ConsentService {
     const complianceGroup = row ? row.profileJson.complianceGroup : archived?.complianceGroup
     const activeProfile = complianceGroup ? await this.profiles.findActiveByComplianceGroup(this.tenantId, complianceGroup) : null
 
-    return verifyConsent(record, recordProfile, activeProfile, this.dataSigningHash)
+    const keys = this.dataSigningHash ? new SiteKeys(this.dataSigningHash).verifying(this.tenantId) : undefined
+    return verifyConsent(record, recordProfile, activeProfile, keys)
   }
 
   async erase(visitorId: string): Promise<void> {

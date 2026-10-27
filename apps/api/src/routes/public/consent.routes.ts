@@ -12,14 +12,14 @@ import {
   validateCreateConsent, validateUpdateConsent,
   castCreateConsent, castUpdateConsent,
 } from '../../validators/consent.validator'
-import { randomVisitorId } from '../../utils/crypto'
+import { randomVisitorId, SiteKeys } from '../../utils/crypto'
 import { forTenant, type PerTenant } from '../../services/tenant-services'
 import { ErasureRequestError, type ErasureRequestService } from '../../services/erasure-request.service'
 import { ParentalConsentError, type ParentalConsentService } from '../../services/parental-consent.service'
 
 // Verify that the request's cookie contains a valid consenti_<visitorId> token,
 // proving the caller is the actual visitor who originally submitted consent.
-function assertVisitorOwnership(request: Request, visitorId: string, secret: string): Response | null {
+function assertVisitorOwnership(request: Request, visitorId: string, secret: string | string[]): Response | null {
   const cookieHeader = request.headers.get('cookie') ?? ''
   const name = `consenti_${visitorId}`
   const owned = cookieHeader.split(';').some(c => {
@@ -38,12 +38,14 @@ export function buildConsentRoutes(
   profilesIn: PerTenant<ProfileService>,
   resolveTenantId: (req: Request) => Promise<string> = async () => 'default',
   storage?: StorageAdapter,
-  dataSigningHash = '',
+  dataSigningHash: string | SiteKeys = '',
   eventBus?: EventEmitter,
   parentalConsentTokenTtlDays = 7,
   erasureRequests?: ErasureRequestService,
   parentalConsent?: ParentalConsentService,
 ) {
+  // Each site signs ownership cookies and parental-consent tokens with its own key.
+  const keys = typeof dataSigningHash === 'string' ? new SiteKeys(dataSigningHash) : dataSigningHash
   return {
     'POST /consent': async (request: Request, _params: Record<string, string>): Promise<Response> =>
       withErrorHandler(async () => {
@@ -82,7 +84,7 @@ export function buildConsentRoutes(
         const input = castCreateConsent(b, visitorId, tenantId)
         const record = await consents.create(input)
 
-        const setCookie = buildOwnershipSetCookie(visitorId, record.id, dataSigningHash)
+        const setCookie = buildOwnershipSetCookie(visitorId, record.id, keys.for(tenantId))
         return new Response(JSON.stringify(record), {
           status: 201,
           headers: {
@@ -100,7 +102,7 @@ export function buildConsentRoutes(
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
         // Layer 2: only the visitor's own browser may update their consent
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
 
         const body = await parseJsonBody(request)
@@ -110,7 +112,7 @@ export function buildConsentRoutes(
         const input = castUpdateConsent(body as Record<string, unknown>)
         const record = await consents.update(visitorId, input)
 
-        const setCookie = buildOwnershipSetCookie(visitorId, record.id, dataSigningHash)
+        const setCookie = buildOwnershipSetCookie(visitorId, record.id, keys.for(tenantId))
         return new Response(JSON.stringify(record), {
           status: 200,
           headers: {
@@ -128,7 +130,7 @@ export function buildConsentRoutes(
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
         // Layer 2: only the visitor's own browser may read their consent
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
 
         const record = await consents.get(visitorId)
@@ -147,7 +149,7 @@ export function buildConsentRoutes(
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
         // Layer 2: cookie ownership (browser calls); server-side callers use admin auth upstream
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
 
         const result = await consents.verify(visitorId)
@@ -165,7 +167,7 @@ export function buildConsentRoutes(
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
         // Layer 2: only the visitor's own browser may erase their consent
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
 
         const existing = await consents.get(visitorId)
@@ -185,13 +187,14 @@ export function buildConsentRoutes(
         if (!erasureRequests) return errorResponse(404, 'Not found')
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const tenantId = await resolveTenantId(request)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
         const body = (await parseJsonBody<Record<string, unknown>>(request)) ?? {}
         if (typeof body !== 'object' || Array.isArray(body)) return errorResponse(400, 'Invalid JSON body')
         try {
           const created = await erasureRequests.create({
-            tenantId: await resolveTenantId(request), channel: 'widget', visitorId,
+            tenantId, channel: 'widget', visitorId,
             contact: body['contact'] as string | null, message: body['message'] as string | null,
           })
           return json(201, { id: created.id, status: created.status, dueAt: created.dueAt })
@@ -213,7 +216,7 @@ export function buildConsentRoutes(
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
 
         // Layer 2: only the visitor's own browser may request a parental-consent token for them
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
 
         const body = await parseJsonBody(request) as Record<string, unknown>
@@ -221,7 +224,7 @@ export function buildConsentRoutes(
         if (!profileId) return errorResponse(400, 'profileId is required')
         if (!(await profiles.get(profileId))) return errorResponse(404, 'Profile not found')
 
-        const token = buildParentalConsentToken(visitorId, profileId, dataSigningHash)
+        const token = buildParentalConsentToken(visitorId, profileId, keys.for(tenantId))
         const issuedAt = Math.round(Date.now() / 1000)
         // Recorded (and started with the configured provider, if any) before the event, so a
         // listener can already look the request up.
@@ -252,10 +255,11 @@ export function buildConsentRoutes(
         const token = typeof body['token'] === 'string' ? body['token'] : null
         if (!token) return errorResponse(400, 'token is required')
 
-        const result = verifyParentalConsentToken(token, dataSigningHash, parentalConsentTokenTtlDays)
+        const tenantId = await resolveTenantId(request)
+        const result = verifyParentalConsentToken(token, keys.verifying(tenantId), parentalConsentTokenTtlDays)
         if (!result.valid) return errorResponse(403, `Invalid or expired token (${result.reason})`)
 
-        await parentalConsent?.verifyByToken(await resolveTenantId(request), result.visitorId, result.profileId)
+        await parentalConsent?.verifyByToken(tenantId, result.visitorId, result.profileId)
         eventBus?.emit('consent.parentalConsentGranted', { visitorId: result.visitorId, profileId: result.profileId })
         return json(200, { visitorId: result.visitorId, profileId: result.profileId })
       }),
@@ -265,9 +269,10 @@ export function buildConsentRoutes(
       withErrorHandler(async () => {
         const visitorId = params['visitorId']
         if (!visitorId) return errorResponse(400, 'Missing visitorId')
-        const ownershipError = assertVisitorOwnership(request, visitorId, dataSigningHash)
+        const tenantId = await resolveTenantId(request)
+        const ownershipError = assertVisitorOwnership(request, visitorId, keys.verifying(tenantId))
         if (ownershipError) return ownershipError
-        const latest = parentalConsent ? await parentalConsent.latest(await resolveTenantId(request), visitorId) : null
+        const latest = parentalConsent ? await parentalConsent.latest(tenantId, visitorId) : null
         if (!latest) return json(200, { status: 'none' })
         return json(200, {
           status: latest.status, requestId: latest.id,

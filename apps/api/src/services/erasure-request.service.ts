@@ -54,7 +54,7 @@ export class ErasureRequestService {
   constructor(
     private storage: StorageAdapter,
     private audit: AuditRepo,
-    private visitorRef: (visitorId: string) => string,
+    private visitorRef: (tenantId: string, visitorId: string) => string,
     private eraseConsent: (tenantId: string, visitorId: string) => Promise<void>,
     private policy: (tenantId: string) => Promise<RetentionPolicy>,
   ) { }
@@ -73,7 +73,7 @@ export class ErasureRequestService {
       id: sortableEntityId('erq'),
       tenantId: input.tenantId,
       collection: 'erasure_request',
-      ref: visitorId ? this.visitorRef(visitorId) : null,
+      ref: visitorId ? this.visitorRef(input.tenantId, visitorId) : null,
       status: 'received',
       dueAt: new Date(now.getTime() + days * 86_400_000).toISOString(),
       createdAt: at,

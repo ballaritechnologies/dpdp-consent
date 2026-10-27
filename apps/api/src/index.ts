@@ -31,6 +31,7 @@ import { VisitorService } from './services/visitor.service'
 import { NoticeService } from './services/notice.service'
 import { UserService } from './services/user.service'
 import { RegimeService } from './services/regime.service'
+import { SiteKeys } from './utils/crypto'
 import { ReceiptService } from './services/receipt.service'
 import { NoticeVersionService } from './services/notice-version.service'
 import { ErasureRequestService } from './services/erasure-request.service'
@@ -464,10 +465,12 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     console.warn('[Consenti] compliance.complianceMap is ignored when compliance.type is a fixed group')
   }
 
+  // Each site signs with its own key derived from dataSigningHash; `default` uses it directly.
+  const siteKeys = new SiteKeys(compliance.dataSigningHash)
   const receiptService = new ReceiptService(storage, compliance.dataSigningHash)
   const noticeVersionService = new NoticeVersionService(storage)
   const parentalConsentService = new ParentalConsentService(
-    storage, auditRepo, id => receiptService.visitorRef(id), compliance.parentalConsentProvider,
+    storage, auditRepo, (tenantId, id) => receiptService.visitorRef(tenantId, id), compliance.parentalConsentProvider,
   )
   // Profile, consent, visitor and notice services are bound to one site; each site gets its own
   // set, built on first use. `default` is the single-site case and keeps these variable names.
@@ -475,7 +478,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
     const profiles = new ProfileService(profileRepo, auditRepo, tenantId, storage, eventBus, localeCache, profilesDir, config.handleCache, config.s3Api, noticeVersionService)
     return {
       profiles,
-      visitors: new VisitorService(visitorRepo, tenantId, eventBus, compliance.dataSigningHash),
+      visitors: new VisitorService(visitorRepo, tenantId, eventBus, siteKeys.for(tenantId)),
       notices: new NoticeService(noticeRepo, tenantId),
       consents: new ConsentService(
         consentRepo, visitorRepo, profileRepo, auditRepo, tenantId, config.compliance,
@@ -502,7 +505,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
   }, compliance.consentManagers ?? [], eventBus)
   const retentionService = new RetentionService(storage, tenantId => tenantServices.for(tenantId).consents, receiptService, auditRepo, eventBus)
   const erasureRequestService = new ErasureRequestService(
-    storage, auditRepo, id => receiptService.visitorRef(id), (tenantId, id) => tenantServices.for(tenantId).consents.erase(id),
+    storage, auditRepo, (tenantId, id) => receiptService.visitorRef(tenantId, id), (tenantId, id) => tenantServices.for(tenantId).consents.erase(id),
     tenantId => retentionService.getPolicy(tenantId),
   )
   const userService = new UserService(userRepo, auditRepo)
@@ -576,7 +579,7 @@ export function createConsenti(userConfig: ConsentiServerConfig) {
           ...buildProfileRoutes(tenantId => tenantServices.for(tenantId).profiles, geoResolver, profilesDir, apiBase, { regime: regimeService, multiTenant: multiTenantEnabled }),
           ...buildConsentRoutes(
             tenantId => tenantServices.for(tenantId).consents, tenantId => tenantServices.for(tenantId).visitors,
-            tenantId => tenantServices.for(tenantId).profiles, resolvePublicTenantId, storage, compliance.dataSigningHash, eventBus, compliance.parentalConsentTokenTtlDays ?? 7, erasureRequestService, parentalConsentService),
+            tenantId => tenantServices.for(tenantId).profiles, resolvePublicTenantId, storage, siteKeys, eventBus, compliance.parentalConsentTokenTtlDays ?? 7, erasureRequestService, parentalConsentService),
           ...buildNoticeRoutes(noticeService),
           ...buildTcfStatusRoutes(storage, compliance.tcf),
           ...buildGppStatusRoutes(storage, compliance.gpp),

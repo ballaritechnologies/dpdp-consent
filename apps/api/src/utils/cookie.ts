@@ -41,11 +41,12 @@ export function buildExpireOwnershipCookie(visitorId: string): string {
   return `${name}=; ${sameSiteAttrs()}; Path=/; Max-Age=0`
 }
 
-/** Verifies a `consenti_{visitorId}` cookie value against the expected visitor and secret. */
-export function verifyOwnershipToken(token: string, visitorId: string, secret: string): boolean {
+/** Verifies a `consenti_{visitorId}` cookie value against the expected visitor and secret (or
+ * any of several secrets, e.g. a site's key and the key it used before). */
+export function verifyOwnershipToken(token: string, visitorId: string, secret: string | string[]): boolean {
   const parts = token.split('.')
   if (parts.length !== 2) return false
   const [consentId, sig] = parts
   if (!consentId || !sig) return false
-  return verifyHmac(`${visitorId}.${consentId}`, sig, secret)
+  return (Array.isArray(secret) ? secret : [secret]).some(k => verifyHmac(`${visitorId}.${consentId}`, sig, k))
 }

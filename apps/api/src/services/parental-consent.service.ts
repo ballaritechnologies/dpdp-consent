@@ -21,7 +21,7 @@ export class ParentalConsentService {
   constructor(
     private storage: StorageAdapter,
     private audit: AuditRepo,
-    private visitorRef: (visitorId: string) => string,
+    private visitorRef: (tenantId: string, visitorId: string) => string,
     private provider?: ParentalConsentProvider,
   ) { }
 
@@ -31,7 +31,7 @@ export class ParentalConsentService {
 
   async request(tenantId: string, visitorId: string, profileId: string, locale: string | null): Promise<ParentalConsentRequest> {
     const now = new Date().toISOString()
-    const ref = this.visitorRef(visitorId)
+    const ref = this.visitorRef(tenantId, visitorId)
     let req: ParentalConsentRequest = {
       id: sortableEntityId('pcr'), tenantId, collection: 'parental_consent', ref, status: 'pending', dueAt: null,
       createdAt: now, updatedAt: now,
@@ -69,7 +69,7 @@ export class ParentalConsentService {
   /** The visitor's latest request, refreshed from the provider while pending. */
   async latest(tenantId: string, visitorId: string): Promise<ParentalConsentRequest | null> {
     const [req] = await this.storage.listEntities(
-      { tenantId, collection: 'parental_consent', ref: this.visitorRef(visitorId) }, { limit: 1 },
+      { tenantId, collection: 'parental_consent', ref: this.visitorRef(tenantId, visitorId) }, { limit: 1 },
     ) as unknown as ParentalConsentRequest[]
     if (!req) return null
     if (req.status !== 'pending' || !this.provider || !req.data.providerRef || req.data.providerId !== this.provider.id) return req

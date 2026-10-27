@@ -59,7 +59,9 @@ Send `null` to clear either field. Every change is written to the audit log as
 
 With `multiTenant: { enabled: true }`, each site (tenant) has its own regime and profiles. The
 widget sends its `core.tenantId` to the server, which applies that site's regime. In the
-dashboard, the regime card shows a site picker when there is more than one site.
+dashboard, the **Site** picker in the header chooses which site you are working on (shown
+when you can see more than one site), and the regime card has its own site picker. Each site
+signs its consent records and receipts with its own key.
 
 ## Returning visitors
 

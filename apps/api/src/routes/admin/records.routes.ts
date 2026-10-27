@@ -59,7 +59,7 @@ export function buildAdminRecordRoutes(
     if (action && !RECEIPT_ACTIONS.includes(action as ConsentReceiptAction)) return errorResponse(400, 'Unknown action')
     return {
       tenantId, collection: 'consent_receipt',
-      ...(visitorId ? { ref: receipts.visitorRef(visitorId) } : {}),
+      ...(visitorId ? { ref: receipts.visitorRef(tenantId, visitorId) } : {}),
       ...(action ? { status: action } : {}),
       ...(from ? { createdFrom: from } : {}),
       ...(to ? { createdBefore: to } : {}),
